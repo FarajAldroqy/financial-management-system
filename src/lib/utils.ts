@@ -5,14 +5,25 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Format amount_cents into Libyan Dinar string ("د.ل") */
-export function formatCurrency(cents: number, _locale = 'ar-LY'): string {
+/** Get the active wallet currency symbol ('د.ل' or '$') from session or default */
+export function getActiveWalletSymbol(): string {
+  if (typeof window !== 'undefined') {
+    const saved = sessionStorage.getItem('active_wallet_type')
+    if (saved === 'USD') return '$'
+    if (saved === 'LYD') return 'د.ل'
+  }
+  return 'د.ل'
+}
+
+/** Format amount_cents into currency string with dynamic or provided symbol */
+export function formatCurrency(cents: number, symbol?: string, _locale = 'ar-LY'): string {
   const amount = cents / 100
   const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount)
-  return `${formatted} د.ل`
+  const sym = symbol !== undefined ? symbol : getActiveWalletSymbol()
+  return `${formatted} ${sym}`
 }
 
 /** Convert Eastern Arabic (٠-٩) and Persian (۰-۹) numerals into standard Western (0-9) digits */
@@ -47,31 +58,44 @@ export function cleanAndNormalizeAmount(rawVal: string, prevVal: string = ''): s
   return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned
 }
 
+/** Safely parses a date string across ISO, SQLite 'YYYY-MM-DD HH:MM:SS', and custom formats */
+export function parseDateSafe(dateInput: string | Date | undefined | null): Date {
+  if (!dateInput) return new Date()
+  if (dateInput instanceof Date) return dateInput
+  const str = String(dateInput).trim()
+  const normalized = str.includes(' ') && !str.includes('T') ? str.replace(' ', 'T') : str
+  const d = new Date(normalized)
+  return isNaN(d.getTime()) ? new Date(str) : d
+}
+
 /** Format date into Arabic/Standard date string */
 export function formatDate(dateStr: string, locale = 'ar-LY'): string {
   try {
+    const d = parseDateSafe(dateStr)
+    if (isNaN(d.getTime())) return dateStr
     return new Intl.DateTimeFormat(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    }).format(new Date(dateStr))
+    }).format(d)
   } catch {
     return dateStr
   }
 }
 
-/** Short number formatter for metric cards with Libyan Dinar ("د.ل") */
-export function formatShort(cents: number): string {
+/** Short number formatter for metric cards with active wallet currency */
+export function formatShort(cents: number, symbol?: string): string {
   const amount = cents / 100
+  const sym = symbol !== undefined ? symbol : getActiveWalletSymbol()
   if (amount >= 1_000_000) {
-    return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(amount / 1_000_000)}M د.ل`
+    return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(amount / 1_000_000)}M ${sym}`
   }
   if (amount >= 1_000) {
-    return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(amount / 1_000)}K د.ل`
+    return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(amount / 1_000)}K ${sym}`
   }
-  return formatCurrency(cents)
+  return formatCurrency(cents, sym)
 }
 
 /** Filter transactions array by DateFilter mode (NONE, YEAR, MONTH, DAY, RANGE) */
@@ -82,7 +106,7 @@ export function filterTransactionsByDate<T extends { created_at: string }>(
   if (!filter || filter.mode === 'NONE') return items
 
   return items.filter((tx) => {
-    const txDate = new Date(tx.created_at)
+    const txDate = parseDateSafe(tx.created_at)
     if (isNaN(txDate.getTime())) return true
 
     if (filter.mode === 'YEAR' && filter.year !== undefined && filter.year !== null) {

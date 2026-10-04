@@ -145,12 +145,12 @@ export function EntityLedgerModal({
 
           {/* Official Report Document Header */}
           <div className="flex items-center justify-between border-b-2 border-black pb-4 mb-4 gap-4" dir="rtl">
-            {/* Right: MJS Logo (Circle Shape) */}
+            {/* Right: App Logo (Circle Shape) */}
             <div className="flex items-center justify-start shrink-0">
               <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-black bg-white p-0.5 flex items-center justify-center shadow-xs">
                 <img
                   src={logoImg}
-                  alt="شعار منتجع MJS"
+                  alt="شعار منظومة إدارة مالية"
                   className="w-full h-full object-cover rounded-full"
                   onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                 />
@@ -159,7 +159,7 @@ export function EntityLedgerModal({
 
             {/* Center: System Header & Entity Title Text (في الوسط) */}
             <div className="text-center flex-1 space-y-1">
-              <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight">منتجع MJS للمعاملات المالية</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight">منظومة إدارة مالية</h1>
               <p className="text-sm font-extrabold text-gray-800">
                 تقرير كشف حساب مالي — <span className="underline font-black text-black">{entityName}</span>
               </p>
@@ -334,7 +334,7 @@ export function EntityLedgerModal({
                     <span>مجموع الإيداعات</span>
                   </div>
                   <div className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 ar-num">
-                    +{formatCurrency(totalDepositsCents)} <span className="text-xs font-semibold">د.ل</span>
+                    +{formatCurrency(totalDepositsCents)}
                   </div>
                 </div>
 
@@ -345,7 +345,7 @@ export function EntityLedgerModal({
                     <span>مجموع المسحوبات</span>
                   </div>
                   <div className="text-lg font-extrabold text-rose-600 dark:text-rose-400 ar-num">
-                    -{formatCurrency(totalWithdrawalsCents)} <span className="text-xs font-semibold">د.ل</span>
+                    -{formatCurrency(totalWithdrawalsCents)}
                   </div>
                 </div>
 
@@ -360,7 +360,7 @@ export function EntityLedgerModal({
                     <span>صافي الحساب الحالي</span>
                   </div>
                   <div className="text-lg font-black ar-num">
-                    {isPositiveNet ? '+' : ''}{formatCurrency(netCents)} <span className="text-xs font-semibold">د.ل</span>
+                    {isPositiveNet ? '+' : ''}{formatCurrency(netCents)}
                   </div>
                 </div>
               </div>
@@ -435,7 +435,7 @@ export function EntityLedgerModal({
                               </td>
                               <td className="py-3 px-4 text-left font-bold ar-num">
                                 <span className={isDeposit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                  {isDeposit ? '+' : '-'}{formatCurrency(tx.amount_cents)} د.ل
+                                  {isDeposit ? '+' : '-'}{formatCurrency(tx.amount_cents)}
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400 text-[11px] truncate max-w-xs">

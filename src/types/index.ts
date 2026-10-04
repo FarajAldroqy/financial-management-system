@@ -15,6 +15,7 @@ export interface Transaction {
   is_pinned?: number
   is_archived?: number
   is_deleted?: number
+  wallet_type?: 'LYD' | 'USD'
   created_at: string
 }
 
@@ -28,6 +29,22 @@ export interface TransactionCreate {
   payment_method: PaymentMethod | string
   notes?: string
   status?: 'COMPLETED' | 'PENDING' | 'FAILED' | 'PROCESSING'
+  wallet_type?: 'LYD' | 'USD'
+}
+
+export interface TransactionUpdate {
+  id: number
+  client_name?: string
+  type?: 'DEPOSIT' | 'WITHDRAWAL'
+  subtype?: TransactionSubtype
+  person_name?: string
+  person_names?: string[]
+  amount_cents?: number
+  payment_method?: PaymentMethod | string
+  notes?: string
+  status?: 'COMPLETED' | 'PENDING' | 'FAILED' | 'PROCESSING'
+  wallet_type?: 'LYD' | 'USD'
+  created_at?: string
 }
 
 export interface Stats {
@@ -56,6 +73,7 @@ export interface GetTransactionsParams {
   search?: string
   type?: 'DEPOSIT' | 'WITHDRAWAL' | 'ALL'
   status?: 'ACTIVE' | 'ARCHIVED' | 'TRASH' | 'ALL_NON_DELETED' | 'ALL'
+  wallet_type?: 'LYD' | 'USD'
 }
 
 export interface ChartDataPoint {
@@ -69,6 +87,7 @@ export interface ChartDataPoint {
 
 export interface GetChartDataParams {
   timeframe: '7d' | '30d' | '3m'
+  wallet_type?: 'LYD' | 'USD'
 }
 
 export type DateFilter =

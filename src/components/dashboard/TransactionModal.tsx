@@ -21,6 +21,7 @@ import { ArrowDownCircle, ArrowUpCircle, Loader2, User, Users, Plus, Trash2 } fr
 import type { TransactionCreate, PaymentMethod, TransactionSubtype } from '@/types'
 import { cleanAndNormalizeAmount } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
+import { useWallet } from '@/context/WalletContext'
 
 interface TransactionModalProps {
   open: boolean
@@ -33,6 +34,7 @@ interface TransactionModalProps {
 export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] }: TransactionModalProps) {
   const { hasPermission } = usePermission()
   const canEditData = hasPermission('edit_data')
+  const { activeWallet, activeWalletMeta } = useWallet()
 
   const isDeposit = mode === 'DEPOSIT'
 
@@ -56,8 +58,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
 
   const reset = () => {
     setTab('REGULAR')
-    // Default to 'منتجع MJS' as the primary entity if available
-    setClientName('منتجع MJS')
+    setClientName(entities[0] || 'الخزينة الكلية')
     setPersonName('')
     setPersonNames([''])
     setAmountStr('')
@@ -131,6 +132,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         payment_method: paymentMethod,
         notes: notes.trim(),
         status: 'COMPLETED',
+        wallet_type: activeWallet || 'LYD',
       }
     } else if (isDeposit) {
       // Deposit from Person
@@ -149,6 +151,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         payment_method: paymentMethod,
         notes: notes.trim(),
         status: 'COMPLETED',
+        wallet_type: activeWallet || 'LYD',
       }
     } else {
       // Withdrawal for Persons
@@ -167,6 +170,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         payment_method: paymentMethod,
         notes: notes.trim(),
         status: 'COMPLETED',
+        wallet_type: activeWallet || 'LYD',
       }
     }
 
@@ -183,10 +187,8 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
   }
 
   const hasSavedEntities = entities.length > 0
-  // Build entities list: منتجع MJS first, then الخزينة الكلية, then the rest sorted alphabetically
-  const entitiesList = Array.from(new Set(['منتجع MJS', ...entities, 'الخزينة الكلية'])).sort((a, b) => {
-    if (a === 'منتجع MJS') return -1
-    if (b === 'منتجع MJS') return 1
+  // Build entities list: الخزينة الكلية first, then the rest sorted alphabetically
+  const entitiesList = Array.from(new Set([...entities, 'الخزينة الكلية'])).sort((a, b) => {
     if (a === 'الخزينة الكلية') return -1
     if (b === 'الخزينة الكلية') return 1
     return a.localeCompare(b, 'ar')
@@ -476,7 +478,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
           {/* COMMON FIELD 1: Amount */}
           <div className="space-y-1.5">
             <Label htmlFor="modal-amount" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
-              القيمة (بالدينار الليبي د.ل) <span className="text-rose-500">*</span>
+              القيمة ({activeWalletMeta?.labelAr || 'بالدينار'} {activeWalletMeta?.symbol || 'د.ل'}) <span className="text-rose-500">*</span>
             </Label>
             <div className="relative">
               <Input
@@ -489,7 +491,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
                 className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg pl-14 font-sans text-left ar-num"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-semibold font-arabic pointer-events-none">
-                د.ل
+                {activeWalletMeta?.symbol || 'د.ل'}
               </span>
             </div>
           </div>

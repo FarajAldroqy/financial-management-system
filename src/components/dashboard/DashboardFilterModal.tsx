@@ -14,6 +14,7 @@ import {
   Filter, RotateCcw, Check, ArrowUp, ArrowDown, DollarSign, CreditCard, Calendar,
 } from 'lucide-react'
 import { cleanAndNormalizeAmount } from '@/lib/utils'
+import { useWallet } from '@/context/WalletContext'
 
 export interface DashboardFilterState {
   type: 'ALL' | 'DEPOSIT' | 'WITHDRAWAL'
@@ -48,6 +49,7 @@ export function DashboardFilterModal({
   onApplyFilter,
   onResetFilter,
 }: DashboardFilterModalProps) {
+  const { activeWalletMeta } = useWallet()
   const [localFilter, setLocalFilter] = useState<DashboardFilterState>(filterState)
 
   useEffect(() => {
@@ -175,7 +177,7 @@ export function DashboardFilterModal({
           <div className="space-y-2">
             <Label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
               <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
-              <span>تصفية حسب قيمة المبلغ (بالدينار د.ل)</span>
+              <span>تصفية حسب قيمة المبلغ ({activeWalletMeta?.labelAr || 'دينار'} {activeWalletMeta?.symbol || 'د.ل'})</span>
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <div>

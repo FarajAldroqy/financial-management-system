@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Edit3, AlertCircle, Check, Building2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { logUserAction } from '@/lib/auditLogger'
+import { useWallet } from '@/context/WalletContext'
 
 interface EntityOption {
   name: string
@@ -35,13 +36,14 @@ export function EditEntitiesModal({
   entities,
   onSuccess,
 }: EditEntitiesModalProps) {
+  const { activeWallet, activeWalletMeta } = useWallet()
   const [selectedEntityName, setSelectedEntityName] = useState<string>('')
   const [newName, setNewName] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Filter out system entity 'منتجع MJS' from selectable editable list or show as disabled
-  const selectableEntities = entities.filter((e) => e.name !== 'منتجع MJS')
+  // All entities are editable
+  const selectableEntities = entities
 
   useEffect(() => {
     if (open) {
@@ -73,11 +75,6 @@ export function EditEntitiesModal({
       return
     }
 
-    if (trimmedOld === 'منتجع MJS') {
-      setError('عذراً، جهة منتجع MJS جهة أساسية في المنظومة لا يمكن تعديل تسميتها')
-      return
-    }
-
     if (!trimmedNew) {
       setError('يرجى إدخال الاسم الجديد للجهة')
       return
@@ -103,6 +100,7 @@ export function EditEntitiesModal({
         const res = await window.electronAPI.updateEntityName({
           oldName: trimmedOld,
           newName: trimmedNew,
+          walletType: activeWallet || 'LYD',
         })
         if (!res.success) {
           setError(res.message || 'حدث خطأ أثناء تعديل بيانات الجهة')
@@ -190,13 +188,13 @@ export function EditEntitiesModal({
                 <div>
                   <span className="text-zinc-500">إجمالي المودعات: </span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    +{formatCurrency(selectedEntity.depositedCents)} د.ل
+                    +{formatCurrency(selectedEntity.depositedCents, activeWalletMeta?.symbol)}
                   </span>
                 </div>
                 <div>
                   <span className="text-zinc-500">إجمالي المسحوبات: </span>
                   <span className="font-bold text-rose-600 dark:text-rose-400">
-                    -{formatCurrency(selectedEntity.withdrawnCents)} د.ل
+                    -{formatCurrency(selectedEntity.withdrawnCents, activeWalletMeta?.symbol)}
                   </span>
                 </div>
               </div>

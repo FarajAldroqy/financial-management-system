@@ -2,6 +2,7 @@ import { ipcRenderer, contextBridge } from 'electron'
 import type {
   PaginatedTransactions,
   TransactionCreate,
+  TransactionUpdate,
   Transaction,
   Stats,
   GetTransactionsParams,
@@ -17,8 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createTransaction: (payload: TransactionCreate): Promise<Transaction> =>
     ipcRenderer.invoke('db:create-transaction', payload),
 
-  getStats: (): Promise<Stats> =>
-    ipcRenderer.invoke('db:get-stats'),
+  updateTransaction: (payload: TransactionUpdate): Promise<{ success: boolean; data?: Transaction; error?: string }> =>
+    ipcRenderer.invoke('db:update-transaction', payload),
+
+  getStats: (params?: { wallet_type?: 'LYD' | 'USD' }): Promise<Stats> =>
+    ipcRenderer.invoke('db:get-stats', params),
 
   getChartData: (params: GetChartDataParams): Promise<ChartDataPoint[]> =>
     ipcRenderer.invoke('db:get-chart-data', params),
@@ -35,13 +39,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   archiveTransaction: (id: number): Promise<{ success: boolean; is_archived: number }> =>
     ipcRenderer.invoke('db:archive-transaction', id),
 
-  deleteEntityTransactions: (clientName: string, permanent?: boolean): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('db:delete-entity-transactions', clientName, permanent),
+  deleteEntityTransactions: (clientName: string, permanent?: boolean, walletType?: 'LYD' | 'USD'): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('db:delete-entity-transactions', clientName, permanent, walletType),
 
-  restoreEntityTransactions: (clientName: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('db:restore-entity-transactions', clientName),
+  restoreEntityTransactions: (clientName: string, walletType?: 'LYD' | 'USD'): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('db:restore-entity-transactions', clientName, walletType),
 
-  updateEntityName: (params: { oldName: string; newName: string }): Promise<{ success: boolean; updatedCount?: number; message?: string }> =>
+  updateEntityName: (params: { oldName: string; newName: string; walletType?: 'LYD' | 'USD' }): Promise<{ success: boolean; updatedCount?: number; message?: string }> =>
     ipcRenderer.invoke('db:update-entity-name', params),
 
   restoreAllTransactions: (txs: Transaction[]): Promise<{ success: boolean; restoredCount?: number; error?: string }> =>
@@ -59,11 +63,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restoreTransactionsBatch: (ids: number[]): Promise<{ success: boolean; count?: number; error?: string }> =>
     ipcRenderer.invoke('db:restore-transactions-batch', ids),
 
-  deleteEntitiesBatch: (clientNames: string[], permanent?: boolean): Promise<{ success: boolean; count?: number; error?: string }> =>
-    ipcRenderer.invoke('db:delete-entities-batch', clientNames, permanent),
+  deleteEntitiesBatch: (clientNames: string[], permanent?: boolean, walletType?: 'LYD' | 'USD'): Promise<{ success: boolean; count?: number; error?: string }> =>
+    ipcRenderer.invoke('db:delete-entities-batch', clientNames, permanent, walletType),
 
-  restoreEntitiesBatch: (clientNames: string[]): Promise<{ success: boolean; count?: number; error?: string }> =>
-    ipcRenderer.invoke('db:restore-entities-batch', clientNames),
+  restoreEntitiesBatch: (clientNames: string[], walletType?: 'LYD' | 'USD'): Promise<{ success: boolean; count?: number; error?: string }> =>
+    ipcRenderer.invoke('db:restore-entities-batch', clientNames, walletType),
 
   onRequestAutoBackup: (callback: () => void) => {
     ipcRenderer.on('app:request-auto-backup', () => callback())

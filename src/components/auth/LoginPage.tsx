@@ -199,7 +199,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
           <div className="absolute bottom-6 right-6 left-6 text-white text-right space-y-1">
-            <h3 className="font-bold text-lg drop-shadow-md">منتجع MJS</h3>
+            <h3 className="font-bold text-lg drop-shadow-md">منظومة إدارة مالية</h3>
             <p className="text-xs text-zinc-200 drop-shadow-sm font-medium">إدارة السيولة والخزينة والحسابات بكل دقة وأمان</p>
           </div>
         </div>
@@ -212,11 +212,11 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {/* Top Logo */}
             <div className="flex items-center justify-center mb-6">
               {/* System Circular Logo */}
-              <div className="relative w-16 h-16 bg-white dark:bg-zinc-300 rounded-full border-2 border-black dark:border-white shadow-md flex items-center justify-center shrink-0 overflow-hidden p-0">
+              <div className="relative w-16 h-16 bg-white dark:bg-zinc-900 rounded-full border-2 border-amber-500/50 shadow-md flex items-center justify-center shrink-0 overflow-hidden p-0">
                 <img
                   src={logoImg}
-                  alt="شعار منتجع MJS"
-                  className="w-full h-full object-cover scale-[1.08]"
+                  alt="شعار منظومة إدارة مالية"
+                  className="w-full h-full object-cover"
                   style={{ imageRendering: 'crisp-edges' }}
                   onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                 />
@@ -229,7 +229,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 مرحباً بعودتك
               </h1>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">
-                تسجيل الدخول إلى حساب منتجع MJS
+                تسجيل الدخول إلى منظومة إدارة مالية
               </p>
             </div>
           </div>

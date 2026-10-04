@@ -13,6 +13,7 @@ import { formatCurrency, formatShort, filterTransactionsByDate } from '@/lib/uti
 import { exportTransactionsToCsv } from '@/lib/exportUtils'
 import { logUserAction } from '@/lib/auditLogger'
 import type { Transaction, DateFilter } from '@/types'
+import { useWallet } from '@/context/WalletContext'
 
 interface AnalyticsDashboardProps {
   dateFilter?: DateFilter
@@ -105,6 +106,7 @@ function SectionHeader({ icon: Icon, title, color }: { icon: React.ComponentType
 // Main Analytics Dashboard
 // ═══════════════════════════════════════════════════════════════════════
 export function AnalyticsDashboard({ dateFilter }: AnalyticsDashboardProps) {
+  const { activeWallet, activeWalletMeta } = useWallet()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -114,7 +116,10 @@ export function AnalyticsDashboard({ dateFilter }: AnalyticsDashboardProps) {
       try {
         if (window.electronAPI?.getTransactions) {
           const res = await window.electronAPI.getTransactions({
-            page: 1, pageSize: 10000, status: 'ACTIVE',
+            page: 1,
+            pageSize: 10000,
+            status: 'ACTIVE',
+            wallet_type: activeWallet || 'LYD',
           })
           let txs = res.data || []
           if (dateFilter && dateFilter.mode !== 'NONE') {
@@ -129,7 +134,7 @@ export function AnalyticsDashboard({ dateFilter }: AnalyticsDashboardProps) {
       }
     }
     load()
-  }, [dateFilter])
+  }, [dateFilter, activeWallet])
 
   // ── Derived Analytics ──────────────────────────────────────────────
   const analytics = useMemo(() => {

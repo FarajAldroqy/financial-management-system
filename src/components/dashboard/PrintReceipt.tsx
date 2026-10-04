@@ -77,12 +77,12 @@ export function PrintReceipt({ transaction, serialNumber, isPreview = false }: P
         {/* Top Header Row */}
         <div className="relative z-10">
           <div className="flex items-center justify-between pb-2 border-b-2 border-zinc-900 gap-3" dir="rtl">
-            {/* Far Right: MJS App Logo (Circle Shape) */}
+            {/* Far Right: App Logo (Circle Shape) */}
             <div className="flex items-center justify-start shrink-0">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-zinc-900 bg-white p-0.5 flex items-center justify-center shadow-xs">
                 <img
                   src={logoImg}
-                  alt="شعار منتجع MJS"
+                  alt="شعار منظومة إدارة مالية"
                   className="w-full h-full object-cover rounded-full"
                   onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                 />
@@ -91,7 +91,7 @@ export function PrintReceipt({ transaction, serialNumber, isPreview = false }: P
 
             {/* Center (في الوسط): System Title, Receipt Type & Serial Number */}
             <div className="text-center flex-1 space-y-1.5">
-              <h1 className="font-black text-xl sm:text-2xl text-zinc-950 tracking-tight leading-tight">منتجع MJS للمعاملات المالية</h1>
+              <h1 className="font-black text-xl sm:text-2xl text-zinc-950 tracking-tight leading-tight">منظومة إدارة مالية</h1>
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <div className="inline-block px-3.5 py-1 rounded-lg bg-zinc-950 text-white font-black text-xs sm:text-sm shadow-xs">
                   {receiptTitle}

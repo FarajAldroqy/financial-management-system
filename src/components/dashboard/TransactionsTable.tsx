@@ -17,6 +17,7 @@ import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
 import { formatCurrency, formatDate, filterTransactionsByDate } from '@/lib/utils'
 import type { Transaction, TransactionCreate, DateFilter } from '@/types'
 import { TransactionModal } from './TransactionModal'
+import { EditTransactionModal } from './EditTransactionModal'
 import { ReceiptModal } from './ReceiptModal'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { PrintReceipt } from './PrintReceipt'
@@ -35,6 +36,7 @@ import {
 
 import { initMockElectronAPI } from '@/lib/mockApi'
 import { exportTransactionsToCsv } from '@/lib/exportUtils'
+import { useWallet } from '@/context/WalletContext'
 
 const PAGE_SIZE = 8
 
@@ -59,6 +61,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
   const { hasPermission } = usePermission()
   const canEditData = hasPermission('edit_data')
   const canDeleteItems = hasPermission('delete_items')
+  const { activeWallet, activeWalletMeta } = useWallet()
 
   const [data, setData] = useState<Transaction[]>([])
   const [total, setTotal] = useState(0)
@@ -85,6 +88,9 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
   // Transaction creation modal state
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<'DEPOSIT' | 'WITHDRAWAL'>('DEPOSIT')
+
+  // Transaction edit modal state
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
 
   // Funnel Filter Modal State
   const [dashboardFilter, setDashboardFilter] = useState<DashboardFilterState>(defaultDashboardFilter)
@@ -113,6 +119,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     }
     setLoading(true)
     try {
+      const walletType = activeWallet || 'LYD'
       const hasCustomFilters =
         (dateFilter && dateFilter.mode !== 'NONE') ||
         dashboardFilter.paymentMethod !== 'ALL' ||
@@ -132,6 +139,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
           search: searchValue,
           type: effectiveType,
           status: 'ACTIVE',
+          wallet_type: walletType,
         })
         let items = result.data || []
 
@@ -186,6 +194,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
           search: searchValue,
           type: 'ALL',
           status: 'ACTIVE',
+          wallet_type: walletType,
         })
         setData(sortTransactions(result.data))
         setTotal(result.total)
@@ -195,13 +204,13 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     } finally {
       setLoading(false)
     }
-  }, [page, searchValue, typeFilter, dateFilter, dashboardFilter])
+  }, [page, searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   useEffect(() => {
     setPage(1)
-  }, [searchValue, typeFilter, dateFilter, dashboardFilter])
+  }, [searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet])
 
   useEffect(() => {
     fetchData()
@@ -231,6 +240,24 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
 
   const handleRowDoubleClick = (id: number) => {
     setSwipedRowId((prev) => (prev === id ? null : id))
+  }
+
+  // Edit Transaction Handler
+  const handleOpenEditModal = (tx: Transaction, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    setSwipedRowId(null)
+    setEditingTransaction(tx)
+  }
+
+  const handleEditSuccess = (updatedTx: Transaction) => {
+    setData((prev) => {
+      if (updatedTx.wallet_type && activeWallet && updatedTx.wallet_type !== activeWallet) {
+        return prev.filter((t) => t.id !== updatedTx.id)
+      }
+      return sortTransactions(prev.map((t) => (t.id === updatedTx.id ? updatedTx : t)))
+    })
+    onStatsRefresh()
+    fetchData()
   }
 
   // REVERTED & CLEAN PINNING: Optimistic local state update + Framer Motion Shared Layout flight motion
@@ -355,8 +382,12 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
       payload.type === 'DEPOSIT' ? 'تسجيل عملية إيداع جديدة' : 'تسجيل عملية سحب جديدة',
       `جهة: ${payload.client_name} | قيمة: ${formatCurrency(payload.amount_cents)} | طريقة الدفع: ${payload.payment_method}`
     )
+    const createPayload: TransactionCreate = {
+      ...payload,
+      wallet_type: activeWallet || 'LYD',
+    }
     if (window.electronAPI?.createTransaction) {
-      const newTx = await window.electronAPI.createTransaction(payload)
+      const newTx = await window.electronAPI.createTransaction(createPayload)
       if ((newTx as any)?.error) {
         throw new Error((newTx as any).error)
       }
@@ -461,17 +492,21 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
   // Available Entities list for TransactionModal dropdown (combining custom Treasury entities + transactions + system entities)
   const availableEntities = useMemo(() => {
     let custom: string[] = []
+    const key = activeWallet ? `salla_${activeWallet}_treasury_custom_entities` : 'salla_treasury_custom_entities'
     try {
-      const saved = localStorage.getItem('salla_treasury_custom_entities')
+      let saved = localStorage.getItem(key)
+      if (!saved && activeWallet === 'LYD') {
+        saved = localStorage.getItem('salla_treasury_custom_entities')
+      }
       if (saved) custom = JSON.parse(saved)
     } catch {
       custom = []
     }
 
     const txEntities = data.map((t) => t.client_name?.trim()).filter(Boolean) as string[]
-    const combined = Array.from(new Set([...custom, ...txEntities, 'منتجع MJS'])).filter(Boolean)
+    const combined = Array.from(new Set([...custom, ...txEntities])).filter(Boolean)
     return combined.sort((a, b) => a.localeCompare(b, 'ar'))
-  }, [data, modalOpen])
+  }, [data, modalOpen, activeWallet])
 
   const handleBulkArchive = async () => {
     if (selectedIds.length === 0) return
@@ -617,7 +652,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                 logUserAction('EXPORT_CSV', 'تقارير وطباعة', 'تصدير معاملات CSV من جدول المعاملات', `عدد السجلات: ${total}`)
                 // Export all currently loaded data
                 if (window.electronAPI?.getTransactions) {
-                  window.electronAPI.getTransactions({ page: 1, pageSize: 10000, status: 'ACTIVE', search: searchValue, type: typeFilter === 'ALL' ? 'ALL' : typeFilter })
+                  window.electronAPI.getTransactions({ page: 1, pageSize: 10000, status: 'ACTIVE', search: searchValue, type: typeFilter === 'ALL' ? 'ALL' : typeFilter, wallet_type: activeWallet || 'LYD' })
                     .then((res) => exportTransactionsToCsv(res.data || []))
                     .catch(() => exportTransactionsToCsv(data))
                 } else {
@@ -801,6 +836,17 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                                       transition={{ duration: 0.2 }}
                                       className="absolute left-0 inset-y-0 flex items-stretch gap-0 z-10 h-full overflow-hidden"
                                     >
+                                      {/* Edit Button */}
+                                      {canEditData && (
+                                        <button
+                                          onClick={(e) => handleOpenEditModal(tx, e)}
+                                          title="تعديل المعاملة (المبلغ، التاريخ، الجهة...)"
+                                          className="w-12 h-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-colors active:opacity-90"
+                                        >
+                                          <Edit3 className="w-4 h-4" />
+                                        </button>
+                                      )}
+
                                       {/* Pin Button */}
                                       <button
                                         onClick={(e) => handleTogglePin(tx.id, e)}
@@ -838,7 +884,11 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                                 {/* Sliding Row Content Layer */}
                                 <motion.div
                                   animate={{
-                                    x: isDeleting || isArchiving ? -250 : isSwiped ? (canDeleteItems ? 144 : 96) : 0,
+                                    x: isDeleting || isArchiving
+                                      ? -250
+                                      : isSwiped
+                                      ? ((canEditData ? 1 : 0) + 2 + (canDeleteItems ? 1 : 0)) * 48
+                                      : 0,
                                     opacity: isDeleting || isArchiving ? 0 : 1,
                                   }}
                                   transition={{
@@ -1085,6 +1135,15 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
         mode={modalMode}
         onClose={() => setModalOpen(false)}
         onSubmit={handleCreate}
+        entities={availableEntities}
+      />
+
+      {/* Edit Transaction Modal */}
+      <EditTransactionModal
+        open={editingTransaction !== null}
+        transaction={editingTransaction}
+        onClose={() => setEditingTransaction(null)}
+        onSuccess={handleEditSuccess}
         entities={availableEntities}
       />
 

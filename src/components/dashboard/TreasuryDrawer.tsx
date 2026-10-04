@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency, getDateFilterText } from '@/lib/utils'
 import type { DateFilter } from '@/types'
 import { usePermission } from '@/hooks/usePermission'
+import { useWallet } from '@/context/WalletContext'
 import { logUserAction } from '@/lib/auditLogger'
 import logoImg from '@/assets/logo.png'
 
@@ -69,6 +70,7 @@ export function TreasuryDrawer({
   onApplyAdvancedFilter,
   onResetAdvancedFilter,
 }: TreasuryDrawerProps) {
+  const { activeWalletMeta } = useWallet()
   const { hasPermission } = usePermission()
   const canManageTreasury = hasPermission('manage_treasury')
   const canExportReports = hasPermission('export_reports')
@@ -204,7 +206,7 @@ export function TreasuryDrawer({
               <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-zinc-900 bg-white p-0.5 flex items-center justify-center shadow-xs">
                 <img
                   src={logoImg}
-                  alt="شعار منتجع MJS"
+                  alt="شعار منظومة إدارة مالية"
                   className="w-full h-full object-cover rounded-full"
                   onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                 />
@@ -213,7 +215,7 @@ export function TreasuryDrawer({
 
             {/* Center: System Header Text (في الوسط) */}
             <div className="text-center flex-1 space-y-1">
-              <h1 className="text-xl sm:text-2xl font-black text-zinc-950 tracking-tight">منتجع MJS للمعاملات المالية</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-zinc-950 tracking-tight">منظومة إدارة مالية</h1>
               <p className="text-sm font-extrabold text-zinc-700">تقرير مستحقات وأرصدة الخزينة والجهات</p>
               <div className="flex items-center justify-center gap-3 text-xs font-bold text-zinc-600 ar-num flex-wrap pt-0.5">
                 <span>تاريخ التقرير: {new Date().toLocaleDateString('ar-LY')}</span>
@@ -490,14 +492,14 @@ export function TreasuryDrawer({
                           <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-zinc-900 bg-white p-0.5 flex items-center justify-center shadow-xs">
                             <img
                               src={logoImg}
-                              alt="شعار منتجع MJS"
+                              alt="شعار منظومة إدارة مالية"
                               className="w-full h-full object-cover rounded-full"
                               onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                             />
                           </div>
                         </div>
                         <div className="text-center flex-1 space-y-0.5">
-                          <h3 className="text-sm font-extrabold text-zinc-900">منتجع MJS — تقرير مستحقات الخزينة</h3>
+                          <h3 className="text-sm font-extrabold text-zinc-900">منظومة إدارة مالية — تقرير مستحقات الخزينة</h3>
                           <p className="text-[11px] text-emerald-700 font-bold">{getDateFilterText(dateFilter)}</p>
                           <div className="text-[10px] text-zinc-500 ar-num flex items-center justify-center gap-2 pt-0.5">
                             <span>تاريخ: {new Date().toLocaleDateString('ar-LY')}</span>
@@ -588,7 +590,7 @@ export function TreasuryDrawer({
                     {/* Deposit Range */}
                     <div>
                       <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5">
-                        إجمالي المودعات (د.ل)
+                        إجمالي المودعات ({activeWalletMeta?.symbol || 'د.ل'})
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <input
@@ -611,7 +613,7 @@ export function TreasuryDrawer({
                     {/* Withdrawal Range */}
                     <div>
                       <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5">
-                        إجمالي المسحوبات (د.ل)
+                        إجمالي المسحوبات ({activeWalletMeta?.symbol || 'د.ل'})
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <input
@@ -634,7 +636,7 @@ export function TreasuryDrawer({
                     {/* Net Balance Range */}
                     <div>
                       <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5">
-                        صافي الحساب القائم (د.ل)
+                        صافي الحساب القائم ({activeWalletMeta?.symbol || 'د.ل'})
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <input

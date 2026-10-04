@@ -36,8 +36,8 @@ export function WelcomeSplash({ displayName, onComplete }: WelcomeSplashProps) {
           <div className="w-20 h-20 rounded-3xl bg-white dark:bg-slate-900 flex items-center justify-center shadow-xl shadow-cyan-500/25 border-2 border-cyan-500/40 overflow-hidden p-1">
             <img
               src={logoImg}
-              alt="شعار منتجع MJS"
-              className="w-full h-full object-cover scale-[1.1]"
+              alt="شعار منظومة إدارة مالية"
+              className="w-full h-full object-cover"
             />
           </div>
           <motion.div
@@ -66,7 +66,7 @@ export function WelcomeSplash({ displayName, onComplete }: WelcomeSplashProps) {
             transition={{ delay: 0.35, duration: 0.5 }}
             className="text-xs text-slate-500 dark:text-slate-400 font-medium"
           >
-            جاري تجهيز منتجع MJS...
+            جاري تجهيز منظومة إدارة مالية...
           </motion.p>
         </div>
 

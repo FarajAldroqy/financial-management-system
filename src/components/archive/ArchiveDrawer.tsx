@@ -27,6 +27,10 @@ interface ArchiveDrawerProps {
   onPermanentDeleteDashboardRow: (id: number) => Promise<void>
   onRestoreTreasuryEntity: (name: string) => Promise<void>
   onPermanentDeleteTreasuryEntity: (name: string) => Promise<void>
+  onRestoreDashboardRowsBatch?: (ids: number[]) => Promise<void>
+  onPermanentDeleteDashboardRowsBatch?: (ids: number[]) => Promise<void>
+  onRestoreTreasuryEntitiesBatch?: (names: string[]) => Promise<void>
+  onPermanentDeleteTreasuryEntitiesBatch?: (names: string[]) => Promise<void>
 }
 
 export function ArchiveDrawer({
@@ -38,6 +42,10 @@ export function ArchiveDrawer({
   onPermanentDeleteDashboardRow,
   onRestoreTreasuryEntity,
   onPermanentDeleteTreasuryEntity,
+  onRestoreDashboardRowsBatch,
+  onPermanentDeleteDashboardRowsBatch,
+  onRestoreTreasuryEntitiesBatch,
+  onPermanentDeleteTreasuryEntitiesBatch,
 }: ArchiveDrawerProps) {
   const { hasPermission } = usePermission()
   const canDeleteItems = hasPermission('delete_items')
@@ -137,13 +145,18 @@ export function ArchiveDrawer({
       'استعادة دفعة عناصر من الأرشيف (لوحة التحكم)',
       `عدد العناصر: ${selectedDashIds.length}`
     )
-    if (window.electronAPI?.restoreTransactionsBatch) {
-      await window.electronAPI.restoreTransactionsBatch(selectedDashIds)
-    }
-    for (const id of selectedDashIds) {
-      await onRestoreDashboardRow(id)
-    }
+    const ids = [...selectedDashIds]
     setSelectedDashIds([])
+    if (onRestoreDashboardRowsBatch) {
+      await onRestoreDashboardRowsBatch(ids)
+    } else {
+      if (window.electronAPI?.restoreTransactionsBatch) {
+        await window.electronAPI.restoreTransactionsBatch(ids)
+      }
+      for (const id of ids) {
+        await onRestoreDashboardRow(id)
+      }
+    }
   }
 
   const handleBatchRestoreTreasury = async () => {
@@ -155,13 +168,18 @@ export function ArchiveDrawer({
       'استعادة دفعة جهات من الأرشيف (الخزينة)',
       `عدد الجهات: ${selectedTreasuryNames.length}`
     )
-    if (window.electronAPI?.restoreEntitiesBatch) {
-      await window.electronAPI.restoreEntitiesBatch(selectedTreasuryNames)
-    }
-    for (const name of selectedTreasuryNames) {
-      await onRestoreTreasuryEntity(name)
-    }
+    const names = [...selectedTreasuryNames]
     setSelectedTreasuryNames([])
+    if (onRestoreTreasuryEntitiesBatch) {
+      await onRestoreTreasuryEntitiesBatch(names)
+    } else {
+      if (window.electronAPI?.restoreEntitiesBatch) {
+        await window.electronAPI.restoreEntitiesBatch(names)
+      }
+      for (const name of names) {
+        await onRestoreTreasuryEntity(name)
+      }
+    }
   }
 
   // Single & Batch Delete Confirmation Execution
@@ -179,21 +197,31 @@ export function ArchiveDrawer({
         await onPermanentDeleteTreasuryEntity(pendingDelete.idOrName as string)
         setSwipedTreasuryName(null)
       } else if (pendingDelete.type === 'BATCH_DASHBOARD') {
-        if (window.electronAPI?.deleteTransactionsBatch) {
-          await window.electronAPI.deleteTransactionsBatch(selectedDashIds, true)
-        }
-        for (const id of selectedDashIds) {
-          await onPermanentDeleteDashboardRow(id)
-        }
+        const ids = [...selectedDashIds]
         setSelectedDashIds([])
+        if (onPermanentDeleteDashboardRowsBatch) {
+          await onPermanentDeleteDashboardRowsBatch(ids)
+        } else {
+          if (window.electronAPI?.deleteTransactionsBatch) {
+            await window.electronAPI.deleteTransactionsBatch(ids, true)
+          }
+          for (const id of ids) {
+            await onPermanentDeleteDashboardRow(id)
+          }
+        }
       } else if (pendingDelete.type === 'BATCH_TREASURY') {
-        if (window.electronAPI?.deleteEntitiesBatch) {
-          await window.electronAPI.deleteEntitiesBatch(selectedTreasuryNames, true)
-        }
-        for (const name of selectedTreasuryNames) {
-          await onPermanentDeleteTreasuryEntity(name)
-        }
+        const names = [...selectedTreasuryNames]
         setSelectedTreasuryNames([])
+        if (onPermanentDeleteTreasuryEntitiesBatch) {
+          await onPermanentDeleteTreasuryEntitiesBatch(names)
+        } else {
+          if (window.electronAPI?.deleteEntitiesBatch) {
+            await window.electronAPI.deleteEntitiesBatch(names, true)
+          }
+          for (const name of names) {
+            await onPermanentDeleteTreasuryEntity(name)
+          }
+        }
       }
     } finally {
       setIsBatchDeleting(false)

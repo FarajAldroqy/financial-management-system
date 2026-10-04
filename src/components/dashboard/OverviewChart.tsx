@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { formatCurrency } from '@/lib/utils'
 import type { ChartDataPoint } from '@/types'
+import { useWallet } from '@/context/WalletContext'
 
 // Mock fallback data for demo if backend is empty
 function generateFallbackData(timeframe: '7d' | '30d' | '3m'): ChartDataPoint[] {
@@ -51,9 +52,10 @@ interface CustomTooltipProps {
     color: string
   }>
   label?: string
+  currencySymbol?: string
 }
 
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label, currencySymbol }: CustomTooltipProps) {
   if (!active || !payload || !payload.length) return null
 
   const depositsVal = payload.find((p) => p.dataKey === 'deposits')?.value ?? 0
@@ -73,7 +75,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
           <span className="text-zinc-600 dark:text-zinc-400 font-medium">الإيداعات</span>
         </div>
         <span className="font-bold text-cyan-600 dark:text-cyan-400 ar-num font-sans" dir="ltr">
-          +{formatCurrency(Math.round(depositsVal * 100))}
+          +{formatCurrency(Math.round(depositsVal * 100), currencySymbol)}
         </span>
       </div>
 
@@ -84,7 +86,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
           <span className="text-zinc-600 dark:text-zinc-400 font-medium">المسحوبات</span>
         </div>
         <span className="font-bold text-rose-500 dark:text-rose-400 ar-num font-sans" dir="ltr">
-          -{formatCurrency(Math.round(withdrawalsVal * 100))}
+          -{formatCurrency(Math.round(withdrawalsVal * 100), currencySymbol)}
         </span>
       </div>
     </div>
@@ -92,6 +94,8 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 }
 
 export function OverviewChart() {
+  const { activeWallet, activeWalletMeta } = useWallet()
+  const currencySymbol = activeWalletMeta?.symbol || 'د.ل'
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | '3m'>('3m')
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(false)
@@ -100,7 +104,10 @@ export function OverviewChart() {
     setLoading(true)
     try {
       if (window.electronAPI?.getChartData) {
-        const res = await window.electronAPI.getChartData({ timeframe })
+        const res = await window.electronAPI.getChartData({
+          timeframe,
+          wallet_type: activeWallet || 'LYD',
+        })
         if (res && res.length > 0 && res.some((r) => r.deposits > 0 || r.withdrawals > 0)) {
           setChartData(res)
         } else {
@@ -114,7 +121,7 @@ export function OverviewChart() {
     } finally {
       setLoading(false)
     }
-  }, [timeframe])
+  }, [timeframe, activeWallet])
 
   useEffect(() => {
     fetchChartData()
@@ -131,7 +138,7 @@ export function OverviewChart() {
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             </h3>
             <p className="text-xs text-slate-400 dark:text-slate-500 font-arabic mt-0.5">
-              نظرة عامة على تدفقات الإيداعات والمسحوبات بمنتجع MJS
+              نظرة عامة على تدفقات الإيداعات والمسحوبات بالمنظومة المالية
             </p>
           </div>
 
@@ -209,7 +216,7 @@ export function OverviewChart() {
 
               {/* Interactive Custom Arabic Tooltip */}
               <Tooltip
-                content={<CustomTooltip />}
+                content={<CustomTooltip currencySymbol={currencySymbol} />}
                 cursor={{
                   stroke: '#475569',
                   strokeWidth: 1,

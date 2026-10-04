@@ -1,8 +1,8 @@
 {
   "name": "mjs-resort",
-  "productName": "منتجع MJS",
-  "description": "منظومة منتجع MJS لإدارة السيولة والمعاملات المالية والخزينة",
-  "author": "منتجع MJS",
+  "productName": "منظومة إدارة مالية",
+  "description": "منظومة إدارة مالية لإدارة السيولة والمعاملات والخزينة",
+  "author": "منظومة إدارة مالية",
   "private": true,
   "version": "1.0.8",
   "type": "module",

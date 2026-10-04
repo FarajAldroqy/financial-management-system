@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
 
-app.setName('منتجع MJS')
+app.setName('منظومة إدارة مالية')
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -65,9 +65,12 @@ function initDatabase() {
 
   db = new Database(dbPath)
 
-  // Enable WAL mode for better performance
+  // Enable WAL mode & configure concurrency pragmas for high reliability
   try { db.pragma('journal_mode = WAL') } catch {}
+  try { db.pragma('synchronous = NORMAL') } catch {}
+  try { db.pragma('busy_timeout = 10000') } catch {}
   try { db.pragma('foreign_keys = ON') } catch {}
+  try { db.pragma('temp_store = MEMORY') } catch {}
 
   // Create transactions table with all schema columns
   try {
@@ -83,6 +86,7 @@ function initDatabase() {
         payment_method TEXT    NOT NULL DEFAULT 'نقداً',
         status         TEXT    NOT NULL DEFAULT 'COMPLETED',
         notes          TEXT    NOT NULL DEFAULT '',
+        wallet_type    TEXT    NOT NULL DEFAULT 'LYD',
         is_pinned      INTEGER NOT NULL DEFAULT 0,
         is_archived    INTEGER NOT NULL DEFAULT 0,
         is_deleted     INTEGER NOT NULL DEFAULT 0,
@@ -121,6 +125,9 @@ function initDatabase() {
     if (!colNames.has('person_names')) {
       try { db.exec(`ALTER TABLE transactions ADD COLUMN person_names TEXT NOT NULL DEFAULT ''`) } catch {}
     }
+    if (!colNames.has('wallet_type')) {
+      try { db.exec(`ALTER TABLE transactions ADD COLUMN wallet_type TEXT NOT NULL DEFAULT 'LYD'`) } catch {}
+    }
     if (!colNames.has('is_pinned')) {
       try { db.exec(`ALTER TABLE transactions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`) } catch {}
     }
@@ -130,11 +137,6 @@ function initDatabase() {
     if (!colNames.has('is_deleted')) {
       try { db.exec(`ALTER TABLE transactions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`) } catch {}
     }
-
-    // Migrate legacy system entity name 'سلة الخير' to 'منتجع MJS'
-    try {
-      db.prepare(`UPDATE transactions SET client_name = 'منتجع MJS' WHERE client_name = 'سلة الخير'`).run()
-    } catch {}
   } catch (e) {
     console.error('Migration error:', e)
   }
@@ -145,6 +147,7 @@ function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_tx_list ON transactions(is_archived, is_pinned DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tx_search ON transactions(client_name, type);
       CREATE INDEX IF NOT EXISTS idx_tx_status ON transactions(is_deleted, is_archived, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tx_wallet ON transactions(wallet_type, is_deleted, is_archived, created_at DESC);
     `)
   } catch (e) {
     console.error('Index creation error:', e)
@@ -171,8 +174,8 @@ function registerIpcHandlers() {
       db.exec('DELETE FROM transactions')
       db.exec('DELETE FROM transaction_notes')
       const stmt = db.prepare(`
-        INSERT INTO transactions (id, client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, is_pinned, is_archived, is_deleted, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO transactions (id, client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       const noteStmt = db.prepare(`
         INSERT OR REPLACE INTO transaction_notes (transaction_id, notes)
@@ -194,6 +197,7 @@ function registerIpcHandlers() {
             t.payment_method || 'نقداً',
             t.status || 'COMPLETED',
             notesVal,
+            t.wallet_type || 'LYD',
             t.is_pinned ?? 0,
             t.is_archived ?? 0,
             t.is_deleted ?? 0,
@@ -229,6 +233,7 @@ function registerIpcHandlers() {
     search?: string
     type?: string
     status?: 'ACTIVE' | 'ARCHIVED' | 'TRASH' | 'ALL_NON_DELETED' | 'ALL'
+    wallet_type?: string
   }) => {
     try {
       const page = params?.page ?? 1
@@ -239,6 +244,15 @@ function registerIpcHandlers() {
       const offset = (page - 1) * pageSize
 
       let whereClause = 'WHERE 1=1'
+      const args: (string | number)[] = []
+
+      // Scope to wallet unless full export/backup without wallet_type is requested
+      if (status !== 'ALL' || params?.wallet_type) {
+        const walletType = params?.wallet_type || 'LYD'
+        whereClause += ' AND wallet_type = ?'
+        args.push(walletType)
+      }
+
       if (status === 'ACTIVE') {
         whereClause += ' AND is_deleted = 0 AND is_archived = 0'
       } else if (status === 'ARCHIVED') {
@@ -250,8 +264,6 @@ function registerIpcHandlers() {
       } else if (status === 'ALL') {
         // No status filter: return ALL rows
       }
-
-      const args: (string | number)[] = []
 
       if (search) {
         const sanitized = search.replace(/[%_]/g, '\\$&')
@@ -301,6 +313,7 @@ function registerIpcHandlers() {
     payment_method?: string
     notes?: string
     status?: string
+    wallet_type?: string
   }) => {
     try {
       const paymentMethod = payload.payment_method || 'نقداً'
@@ -309,6 +322,7 @@ function registerIpcHandlers() {
       const subtype = payload.subtype || 'REGULAR'
       const personName = payload.person_name || ''
       const personNamesStr = payload.person_names ? JSON.stringify(payload.person_names) : ''
+      const walletType = payload.wallet_type || 'LYD'
 
       // Self-healing migration check for all columns
       try {
@@ -329,6 +343,9 @@ function registerIpcHandlers() {
         if (!colNames.has('person_names')) {
           try { db.exec(`ALTER TABLE transactions ADD COLUMN person_names TEXT NOT NULL DEFAULT ''`) } catch {}
         }
+        if (!colNames.has('wallet_type')) {
+          try { db.exec(`ALTER TABLE transactions ADD COLUMN wallet_type TEXT NOT NULL DEFAULT 'LYD'`) } catch {}
+        }
         if (!colNames.has('is_pinned')) {
           try { db.exec(`ALTER TABLE transactions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`) } catch {}
         }
@@ -343,8 +360,8 @@ function registerIpcHandlers() {
       let result: any
       try {
         const stmt = db.prepare(`
-          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, is_pinned, is_archived, is_deleted)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
         `)
         result = stmt.run(
           payload.client_name,
@@ -355,19 +372,21 @@ function registerIpcHandlers() {
           payload.amount_cents,
           paymentMethod,
           status,
-          notes
+          notes,
+          walletType
         )
       } catch {
         const stmtFallback = db.prepare(`
-          INSERT INTO transactions (client_name, type, amount_cents, payment_method, status)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO transactions (client_name, type, amount_cents, payment_method, status, wallet_type)
+          VALUES (?, ?, ?, ?, ?, ?)
         `)
         result = stmtFallback.run(
           payload.client_name,
           payload.type,
           payload.amount_cents,
           paymentMethod,
-          status
+          status,
+          walletType
         )
       }
 
@@ -389,6 +408,121 @@ function registerIpcHandlers() {
     } catch (err: any) {
       console.error('Failed to create transaction:', err)
       throw err
+    }
+  })
+
+  // PUT /transactions – full transaction update including client_name, type, amount, subtype, person_names, date, notes, etc.
+  ipcMain.handle('db:update-transaction', (_event, payload: {
+    id: number
+    client_name?: string
+    type?: string
+    subtype?: string
+    person_name?: string
+    person_names?: string[]
+    amount_cents?: number
+    payment_method?: string
+    notes?: string
+    status?: string
+    wallet_type?: string
+    created_at?: string
+  }) => {
+    try {
+      if (!payload.id) {
+        return { success: false, error: 'معرف المعاملة مطلوب' }
+      }
+
+      const existing: any = db.prepare('SELECT * FROM transactions WHERE id = ?').get(payload.id)
+      if (!existing) {
+        return { success: false, error: 'المعاملة غير موجودة' }
+      }
+
+      const clientName = payload.client_name !== undefined ? payload.client_name.trim() : existing.client_name
+      if (!clientName) {
+        return { success: false, error: 'اسم الجهة مطلوب' }
+      }
+
+      const type = payload.type !== undefined ? payload.type : existing.type
+      if (type !== 'DEPOSIT' && type !== 'WITHDRAWAL') {
+        return { success: false, error: 'نوع المعاملة يجب أن يكون إيداع أو سحب' }
+      }
+
+      const subtype = payload.subtype !== undefined ? payload.subtype : (existing.subtype || 'REGULAR')
+      const personName = payload.person_name !== undefined ? payload.person_name.trim() : (existing.person_name || '')
+      const personNamesStr = payload.person_names !== undefined ? JSON.stringify(payload.person_names) : (existing.person_names || '')
+      
+      const rawAmount = payload.amount_cents !== undefined ? payload.amount_cents : existing.amount_cents
+      const amountCents = Math.round(Number(rawAmount))
+      if (isNaN(amountCents) || amountCents <= 0) {
+        return { success: false, error: 'المبلغ المالي يجب أن يكون رقماً صحيحاً أكبر من الصفر' }
+      }
+
+      const paymentMethod = payload.payment_method !== undefined ? payload.payment_method : (existing.payment_method || 'نقداً')
+      const status = payload.status !== undefined ? payload.status : (existing.status || 'COMPLETED')
+      const notes = payload.notes !== undefined ? payload.notes.trim() : (existing.notes || '')
+      const walletType = payload.wallet_type !== undefined ? payload.wallet_type : (existing.wallet_type || 'LYD')
+      if (walletType !== 'LYD' && walletType !== 'USD') {
+        return { success: false, error: 'نوع المحفظة غير صالح' }
+      }
+      const createdAt = payload.created_at !== undefined ? payload.created_at : existing.created_at
+
+      const executeAtomicUpdate = db.transaction(() => {
+        db.prepare(`
+          UPDATE transactions
+          SET client_name = ?,
+              type = ?,
+              subtype = ?,
+              person_name = ?,
+              person_names = ?,
+              amount_cents = ?,
+              payment_method = ?,
+              status = ?,
+              notes = ?,
+              wallet_type = ?,
+              created_at = ?
+          WHERE id = ?
+        `).run(
+          clientName,
+          type,
+          subtype,
+          personName,
+          personNamesStr,
+          amountCents,
+          paymentMethod,
+          status,
+          notes,
+          walletType,
+          createdAt,
+          payload.id
+        )
+
+        try {
+          if (notes) {
+            db.prepare(`
+              INSERT INTO transaction_notes (transaction_id, notes, updated_at)
+              VALUES (?, ?, datetime('now'))
+              ON CONFLICT(transaction_id) DO UPDATE SET notes = excluded.notes, updated_at = datetime('now')
+            `).run(payload.id, notes)
+          } else {
+            db.prepare('DELETE FROM transaction_notes WHERE transaction_id = ?').run(payload.id)
+          }
+        } catch {}
+      })
+
+      executeAtomicUpdate()
+
+      const updatedRow: any = db.prepare('SELECT * FROM transactions WHERE id = ?').get(payload.id)
+      if (updatedRow && updatedRow.person_names) {
+        try {
+          updatedRow.person_names = JSON.parse(updatedRow.person_names)
+        } catch {
+          updatedRow.person_names = [updatedRow.person_names]
+        }
+      }
+
+      return { success: true, data: updatedRow }
+    } catch (err: any) {
+      console.error('Failed to update transaction:', err)
+      return { success: false, error: err.message }
     }
   })
 
@@ -468,13 +602,14 @@ function registerIpcHandlers() {
     }
   })
 
-  // POST /delete-entity-transactions – delete all entity transactions
-  ipcMain.handle('db:delete-entity-transactions', (_event, clientName: string, permanent?: boolean) => {
+  // POST /delete-entity-transactions – delete all entity transactions for this wallet
+  ipcMain.handle('db:delete-entity-transactions', (_event, clientName: string, permanent?: boolean, walletType?: string) => {
     try {
+      const wt = walletType || 'LYD'
       if (permanent) {
-        db.prepare('DELETE FROM transactions WHERE client_name = ?').run(clientName)
+        db.prepare('DELETE FROM transactions WHERE client_name = ? AND wallet_type = ?').run(clientName, wt)
       } else {
-        db.prepare('UPDATE transactions SET is_deleted = 1 WHERE client_name = ?').run(clientName)
+        db.prepare('UPDATE transactions SET is_deleted = 1 WHERE client_name = ? AND wallet_type = ?').run(clientName, wt)
       }
       return { success: true }
     } catch (err: any) {
@@ -487,12 +622,19 @@ function registerIpcHandlers() {
   ipcMain.handle('db:delete-transactions-batch', (_event, ids: number[], permanent?: boolean) => {
     try {
       if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 }
-      const placeholders = ids.map(() => '?').join(',')
-      if (permanent) {
-        db.prepare(`DELETE FROM transactions WHERE id IN (${placeholders})`).run(...ids)
-      } else {
-        db.prepare(`UPDATE transactions SET is_deleted = 1 WHERE id IN (${placeholders})`).run(...ids)
-      }
+      const chunkSize = 400
+      const runBatch = db.transaction((batchIds: number[]) => {
+        for (let i = 0; i < batchIds.length; i += chunkSize) {
+          const chunk = batchIds.slice(i, i + chunkSize)
+          const placeholders = chunk.map(() => '?').join(',')
+          if (permanent) {
+            db.prepare(`DELETE FROM transactions WHERE id IN (${placeholders})`).run(...chunk)
+          } else {
+            db.prepare(`UPDATE transactions SET is_deleted = 1 WHERE id IN (${placeholders})`).run(...chunk)
+          }
+        }
+      })
+      runBatch(ids)
       return { success: true, count: ids.length }
     } catch (err: any) {
       console.error('Failed batch delete transactions:', err)
@@ -503,8 +645,15 @@ function registerIpcHandlers() {
   ipcMain.handle('db:archive-transactions-batch', (_event, ids: number[]) => {
     try {
       if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 }
-      const placeholders = ids.map(() => '?').join(',')
-      db.prepare(`UPDATE transactions SET is_archived = 1 WHERE id IN (${placeholders}) AND is_deleted = 0`).run(...ids)
+      const chunkSize = 400
+      const runBatch = db.transaction((batchIds: number[]) => {
+        for (let i = 0; i < batchIds.length; i += chunkSize) {
+          const chunk = batchIds.slice(i, i + chunkSize)
+          const placeholders = chunk.map(() => '?').join(',')
+          db.prepare(`UPDATE transactions SET is_archived = 1 WHERE id IN (${placeholders}) AND is_deleted = 0`).run(...chunk)
+        }
+      })
+      runBatch(ids)
       return { success: true, count: ids.length }
     } catch (err: any) {
       console.error('Failed batch archive transactions:', err)
@@ -515,8 +664,15 @@ function registerIpcHandlers() {
   ipcMain.handle('db:restore-transactions-batch', (_event, ids: number[]) => {
     try {
       if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 }
-      const placeholders = ids.map(() => '?').join(',')
-      db.prepare(`UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE id IN (${placeholders})`).run(...ids)
+      const chunkSize = 400
+      const runBatch = db.transaction((batchIds: number[]) => {
+        for (let i = 0; i < batchIds.length; i += chunkSize) {
+          const chunk = batchIds.slice(i, i + chunkSize)
+          const placeholders = chunk.map(() => '?').join(',')
+          db.prepare(`UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE id IN (${placeholders})`).run(...chunk)
+        }
+      })
+      runBatch(ids)
       return { success: true, count: ids.length }
     } catch (err: any) {
       console.error('Failed batch restore transactions:', err)
@@ -524,15 +680,23 @@ function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('db:delete-entities-batch', (_event, clientNames: string[], permanent?: boolean) => {
+  ipcMain.handle('db:delete-entities-batch', (_event, clientNames: string[], permanent?: boolean, walletType?: string) => {
     try {
       if (!Array.isArray(clientNames) || clientNames.length === 0) return { success: true, count: 0 }
-      const placeholders = clientNames.map(() => '?').join(',')
-      if (permanent) {
-        db.prepare(`DELETE FROM transactions WHERE client_name IN (${placeholders})`).run(...clientNames)
-      } else {
-        db.prepare(`UPDATE transactions SET is_deleted = 1 WHERE client_name IN (${placeholders})`).run(...clientNames)
-      }
+      const wt = walletType || 'LYD'
+      const chunkSize = 400
+      const runBatch = db.transaction((names: string[]) => {
+        for (let i = 0; i < names.length; i += chunkSize) {
+          const chunk = names.slice(i, i + chunkSize)
+          const placeholders = chunk.map(() => '?').join(',')
+          if (permanent) {
+            db.prepare(`DELETE FROM transactions WHERE client_name IN (${placeholders}) AND wallet_type = ?`).run(...chunk, wt)
+          } else {
+            db.prepare(`UPDATE transactions SET is_deleted = 1 WHERE client_name IN (${placeholders}) AND wallet_type = ?`).run(...chunk, wt)
+          }
+        }
+      })
+      runBatch(clientNames)
       return { success: true, count: clientNames.length }
     } catch (err: any) {
       console.error('Failed batch delete entities:', err)
@@ -540,11 +704,19 @@ function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('db:restore-entities-batch', (_event, clientNames: string[]) => {
+  ipcMain.handle('db:restore-entities-batch', (_event, clientNames: string[], walletType?: string) => {
     try {
       if (!Array.isArray(clientNames) || clientNames.length === 0) return { success: true, count: 0 }
-      const placeholders = clientNames.map(() => '?').join(',')
-      db.prepare(`UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE client_name IN (${placeholders})`).run(...clientNames)
+      const wt = walletType || 'LYD'
+      const chunkSize = 400
+      const runBatch = db.transaction((names: string[]) => {
+        for (let i = 0; i < names.length; i += chunkSize) {
+          const chunk = names.slice(i, i + chunkSize)
+          const placeholders = chunk.map(() => '?').join(',')
+          db.prepare(`UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE client_name IN (${placeholders}) AND wallet_type = ?`).run(...chunk, wt)
+        }
+      })
+      runBatch(clientNames)
       return { success: true, count: clientNames.length }
     } catch (err: any) {
       console.error('Failed batch restore entities:', err)
@@ -552,10 +724,11 @@ function registerIpcHandlers() {
     }
   })
 
-  // POST /restore-entity-transactions – restore all entity transactions
-  ipcMain.handle('db:restore-entity-transactions', (_event, clientName: string) => {
+  // POST /restore-entity-transactions – restore all entity transactions for this wallet
+  ipcMain.handle('db:restore-entity-transactions', (_event, clientName: string, walletType?: string) => {
     try {
-      db.prepare('UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE client_name = ?').run(clientName)
+      const wt = walletType || 'LYD'
+      db.prepare('UPDATE transactions SET is_deleted = 0, is_archived = 0 WHERE client_name = ? AND wallet_type = ?').run(clientName, wt)
       return { success: true }
     } catch (err: any) {
       console.error('Failed to restore entity transactions:', err)
@@ -563,13 +736,13 @@ function registerIpcHandlers() {
     }
   })
 
-  // POST /update-entity-name – rename entity client_name across all transactions
-  ipcMain.handle('db:update-entity-name', (_event, params: { oldName: string; newName: string }) => {
+  // POST /update-entity-name – rename entity client_name across all transactions for this wallet
+  ipcMain.handle('db:update-entity-name', (_event, params: { oldName: string; newName: string; walletType?: string }) => {
     try {
       if (!params.oldName || !params.newName) return { success: false, message: 'بيانات غير مكتملة' }
-      if (params.oldName.trim() === 'منتجع MJS') return { success: false, message: 'لا يمكن تعديل اسم جهة منتجع MJS' }
-      const stmt = db.prepare('UPDATE transactions SET client_name = ? WHERE client_name = ?')
-      const res = stmt.run(params.newName.trim(), params.oldName.trim())
+      const wt = params.walletType || 'LYD'
+      const stmt = db.prepare('UPDATE transactions SET client_name = ? WHERE client_name = ? AND wallet_type = ?')
+      const res = stmt.run(params.newName.trim(), params.oldName.trim(), wt)
       return { success: true, updatedCount: res.changes }
     } catch (err: any) {
       console.error('Failed to update entity name:', err)
@@ -577,22 +750,23 @@ function registerIpcHandlers() {
     }
   })
 
-  // GET /stats – aggregated balances across all non-deleted transactions (active + archived)
-  ipcMain.handle('db:get-stats', () => {
+  // GET /stats – aggregated balances across all non-deleted transactions for the wallet
+  ipcMain.handle('db:get-stats', (_event, params?: { wallet_type?: string }) => {
     try {
+      const walletType = params?.wallet_type || 'LYD'
       const deposits = db.prepare(
         `SELECT COALESCE(SUM(amount_cents),0) as total, COUNT(*) as cnt
-         FROM transactions WHERE type='DEPOSIT' AND is_deleted=0`
-      ).get() as { total: number; cnt: number }
+         FROM transactions WHERE wallet_type = ? AND type='DEPOSIT' AND is_deleted=0`
+      ).get(walletType) as { total: number; cnt: number }
 
       const withdrawals = db.prepare(
         `SELECT COALESCE(SUM(amount_cents),0) as total, COUNT(*) as cnt
-         FROM transactions WHERE type='WITHDRAWAL' AND is_deleted=0`
-      ).get() as { total: number; cnt: number }
+         FROM transactions WHERE wallet_type = ? AND type='WITHDRAWAL' AND is_deleted=0`
+      ).get(walletType) as { total: number; cnt: number }
 
       const activeAccounts = (db.prepare(
-        `SELECT COUNT(DISTINCT client_name) as cnt FROM transactions WHERE is_deleted=0`
-      ).get() as { cnt: number }).cnt
+        `SELECT COUNT(DISTINCT client_name) as cnt FROM transactions WHERE wallet_type = ? AND is_deleted=0`
+      ).get(walletType) as { cnt: number }).cnt
 
       return {
         total_balance_cents: deposits.total - withdrawals.total,
@@ -615,10 +789,11 @@ function registerIpcHandlers() {
     }
   })
 
-  // GET /chart-data – aggregated daily transactions for Recharts
-  ipcMain.handle('db:get-chart-data', (_event, params: { timeframe?: '7d' | '30d' | '3m' }) => {
+  // GET /chart-data – aggregated daily transactions for Recharts for the wallet
+  ipcMain.handle('db:get-chart-data', (_event, params: { timeframe?: '7d' | '30d' | '3m'; wallet_type?: string }) => {
     try {
       const timeframe = params?.timeframe ?? '3m'
+      const walletType = params?.wallet_type || 'LYD'
       const days = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : 90
 
       const rows = db.prepare(`
@@ -627,10 +802,10 @@ function registerIpcHandlers() {
           COALESCE(SUM(CASE WHEN type = 'DEPOSIT' THEN amount_cents ELSE 0 END), 0) as deposits_cents,
           COALESCE(SUM(CASE WHEN type = 'WITHDRAWAL' THEN amount_cents ELSE 0 END), 0) as withdrawals_cents
         FROM transactions
-        WHERE created_at >= date('now', '-' || ? || ' days') AND is_deleted = 0
+        WHERE wallet_type = ? AND created_at >= date('now', '-' || ? || ' days') AND is_deleted = 0
         GROUP BY strftime('%Y-%m-%d', created_at)
         ORDER BY date_str ASC
-      `).all(days) as { date_str: string; deposits_cents: number; withdrawals_cents: number }[]
+      `).all(walletType, days) as { date_str: string; deposits_cents: number; withdrawals_cents: number }[]
 
       const dataMap = new Map<string, { deposits_cents: number; withdrawals_cents: number }>()
       for (const r of rows) {
@@ -678,7 +853,7 @@ let isQuitting = false
 
 function createWindow() {
   win = new BrowserWindow({
-    title: 'منتجع MJS',
+    title: 'منظومة إدارة مالية',
     width: 1400,
     height: 900,
     minWidth: 1100,

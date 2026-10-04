@@ -3,7 +3,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.mjsresort.app",
   "asar": true,
-  "productName": "منتجع MJS",
+  "productName": "منظومة إدارة مالية",
   "directories": {
     "output": "release"
   },
@@ -50,8 +50,8 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "منتجع MJS",
-    "uninstallDisplayName": "منتجع MJS",
+    "shortcutName": "منظومة إدارة مالية",
+    "uninstallDisplayName": "منظومة إدارة مالية",
     "runAfterFinish": true,
     // The SQLite database lives in app.getPath('userData'), outside the install
     // directory. Keep it on uninstall — this is financial data.

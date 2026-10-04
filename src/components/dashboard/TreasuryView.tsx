@@ -24,6 +24,8 @@ import { playDeleteSound, playClickSound } from '@/lib/soundEffects'
 import { initMockElectronAPI } from '@/lib/mockApi'
 import { exportEntitiesToCsv } from '@/lib/exportUtils'
 
+import { useWallet, type WalletType } from '@/context/WalletContext'
+
 interface EntityBalance {
   name: string
   depositedCents: number
@@ -43,9 +45,11 @@ interface TreasuryViewProps {
 
 export function KryptoniteFishbowl({
   totalAmount = "456,851,795.00",
+  currencySymbol = "د.ل",
   onOpenDrawer,
 }: {
   totalAmount?: string
+  currencySymbol?: string
   onOpenDrawer?: (mode: DrawerMode) => void
 }) {
   const { hasPermission } = usePermission()
@@ -54,7 +58,7 @@ export function KryptoniteFishbowl({
 
   const [showActions, setShowActions] = useState(false)
   const fishbowlRef = useRef<HTMLDivElement>(null)
-  const cleanAmount = totalAmount.replace(/د\.ل/g, "").trim()
+  const cleanAmount = totalAmount.replace(/[^\d.,-]/g, "").trim()
 
   useEffect(() => {
     if (!showActions) return
@@ -145,7 +149,7 @@ export function KryptoniteFishbowl({
           </div>
           <div className="flex items-center justify-center gap-1.5 text-white font-extrabold text-2xl sm:text-3xl tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] ar-num">
             <span>{cleanAmount}</span>
-            <span className="text-lg font-bold text-cyan-200">د.ل</span>
+            <span className="text-lg font-bold text-cyan-200">{currencySymbol}</span>
           </div>
         </motion.div>
       </motion.div>
@@ -229,10 +233,48 @@ export function KryptoniteFishbowl({
   );
 }
 
+const getCustomEntitiesKey = (wallet: string | null) =>
+  `salla_${wallet || 'LYD'}_treasury_custom_entities`
+
+const readStoredCustomEntities = (wallet: string | null): string[] => {
+  const key = getCustomEntitiesKey(wallet)
+  try {
+    let saved = localStorage.getItem(key)
+    if (!saved && (!wallet || wallet === 'LYD')) {
+      saved = localStorage.getItem('salla_treasury_custom_entities')
+      if (saved) {
+        localStorage.setItem(key, saved)
+      }
+    }
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch (e) {
+    console.error('Failed to parse custom entities from localStorage:', e)
+  }
+  return []
+}
+
+const persistCustomEntities = (wallet: string | null, entities: string[]) => {
+  const key = getCustomEntitiesKey(wallet)
+  try {
+    localStorage.setItem(key, JSON.stringify(entities))
+    if (!wallet || wallet === 'LYD') {
+      localStorage.setItem('salla_treasury_custom_entities', JSON.stringify(entities))
+    }
+  } catch (e) {
+    console.error('Failed to save custom entities to localStorage:', e)
+  }
+}
+
 export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTreasuryRows = [], onArchiveEntity, onDeleteEntity }: TreasuryViewProps) {
   const { hasPermission } = usePermission()
   const canManageTreasury = hasPermission('manage_treasury')
   const canDeleteItems = hasPermission('delete_items')
+
+  const { activeWallet, activeWalletMeta } = useWallet()
+  const currencySymbol = activeWalletMeta?.symbol || 'د.ل'
 
   const [stats, setStats] = useState<Stats | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -279,9 +321,10 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
     }
     setLoading(true)
     try {
+      const walletType = activeWallet || 'LYD'
       const [s, txResult] = await Promise.all([
-        window.electronAPI.getStats(),
-        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ALL_NON_DELETED' }),
+        window.electronAPI.getStats({ wallet_type: walletType }),
+        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ALL_NON_DELETED', wallet_type: walletType }),
       ])
       setStats(s)
       setTransactions(txResult.data)
@@ -290,61 +333,48 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeWallet])
 
   useEffect(() => {
     loadTreasuryData()
   }, [loadTreasuryData])
 
-  // Custom Zero-Value Registered Entities State
+  // Custom Zero-Value Registered Entities State - Scoped by activeWallet
+  // Initialize directly from localStorage to prevent empty-state race conditions on mount
   const [customEntities, setCustomEntities] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('salla_treasury_custom_entities')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
+    const currentWallet = activeWallet || (sessionStorage.getItem('active_wallet_type') as WalletType) || 'LYD'
+    return readStoredCustomEntities(currentWallet)
   })
 
-  // Entity persistence: ensure all distinct transaction client_names are remembered in customEntities
+  // Synchronize custom entities when active wallet changes or rows are restored/permanently deleted
+  useEffect(() => {
+    if (!activeWallet) return
+    const stored = readStoredCustomEntities(activeWallet)
+    setCustomEntities(stored)
+  }, [activeWallet, deletedTreasuryRows, archivedTreasuryRows])
+
+  // Automatically register any newly loaded transaction entity into customEntities list
   useEffect(() => {
     if (transactions.length > 0) {
-      const names = new Set(customEntities)
-      let added = false
-      transactions.forEach((t) => {
-        const name = t.client_name?.trim()
-        if (name && !names.has(name)) {
-          names.add(name)
-          added = true
+      setCustomEntities((prev) => {
+        const names = new Set(prev)
+        let added = false
+        transactions.forEach((t) => {
+          const name = t.client_name?.trim()
+          if (name && !names.has(name)) {
+            names.add(name)
+            added = true
+          }
+        })
+        if (added) {
+          const updated = Array.from(names)
+          persistCustomEntities(activeWallet, updated)
+          return updated
         }
+        return prev
       })
-      if (added) {
-        setCustomEntities(Array.from(names))
-      }
     }
-  }, [transactions, customEntities])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('salla_treasury_custom_entities', JSON.stringify(customEntities))
-    } catch (e) {
-      console.error('Failed to save custom entities:', e)
-    }
-  }, [customEntities])
-
-  // Re-sync customEntities from localStorage when deleted/archived lists change (e.g. permanent deletion in Trash)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('salla_treasury_custom_entities')
-      if (saved) {
-        setCustomEntities(JSON.parse(saved))
-      } else {
-        setCustomEntities([])
-      }
-    } catch {
-      setCustomEntities([])
-    }
-  }, [deletedTreasuryRows, archivedTreasuryRows])
+  }, [transactions, activeWallet])
 
   // Click-outside and Escape key listener to dismiss swiped row or open drawer
   useEffect(() => {
@@ -378,10 +408,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
   const handleTogglePin = (name: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     setSwipedRowName(null)
-    if (name === 'منتجع MJS') {
-      alert('جهة "منتجع MJS" أساسية في المنظومة ومثبتة دائمًا، لا يمكن إلغاء تثبيتها')
-      return
-    }
     setPinnedEntities((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
     )
@@ -391,10 +417,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
   const handleOpenDeleteConfirm = (name: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     setSwipedRowName(null)
-    if (name === 'منتجع MJS') {
-      alert('جهة "منتجع MJS" أساسية في المنظومة لا يمكن حذفها أو أرشفتها')
-      return
-    }
     setPendingDeleteName(name)
   }
 
@@ -406,11 +428,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
       return
     }
     if (!pendingDeleteName) return
-    if (pendingDeleteName === 'منتجع MJS') {
-      alert('جهة "منتجع MJS" أساسية في المنظومة لا يمكن حذفها أو أرشفتها')
-      setPendingDeleteName(null)
-      return
-    }
     const targetName = pendingDeleteName
     setPendingDeleteName(null)
     setDeletingName(targetName)
@@ -421,10 +438,14 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
     }
 
     if (window.electronAPI?.deleteEntityTransactions) {
-      await window.electronAPI.deleteEntityTransactions(targetName)
+      await window.electronAPI.deleteEntityTransactions(targetName, false, activeWallet || 'LYD')
     }
 
-    setCustomEntities((prev) => prev.filter((n) => n !== targetName))
+    setCustomEntities((prev) => {
+      const updated = prev.filter((n) => n !== targetName)
+      persistCustomEntities(activeWallet, updated)
+      return updated
+    })
     setTransactions((prev) => prev.filter((t) => t.client_name.trim() !== targetName))
     setDeletingName(null)
     await loadTreasuryData()
@@ -434,10 +455,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
   const handleArchive = (name: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     setSwipedRowName(null)
-    if (name === 'منتجع MJS') {
-      alert('جهة "منتجع MJS" أساسية في المنظومة لا يمكن حذفها أو أرشفتها')
-      return
-    }
     setArchivingName(name)
 
     const targetEntity = entityBalances.find((item) => item.name === name)
@@ -449,14 +466,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
       setArchivingName(null)
     }, 350)
   }
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('salla_treasury_custom_entities', JSON.stringify(customEntities))
-    } catch (e) {
-      console.error('Failed to save custom entities:', e)
-    }
-  }, [customEntities])
 
   // Add Entity Submit Callback (Zero-value entity added to Treasury table only, no Dashboard transactions created)
   const handleAddEntitySuccess = (name: string) => {
@@ -476,7 +485,11 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
     }
 
     logUserAction('ADD_ENTITY', 'الخزينة والجهات', 'إضافة جهة جديدة بالخزينة', `جهة: ${trimmedName}`)
-    setCustomEntities((prev) => Array.from(new Set([...prev, trimmedName])))
+    setCustomEntities((prev) => {
+      const updated = Array.from(new Set([...prev, trimmedName]))
+      persistCustomEntities(activeWallet, updated)
+      return updated
+    })
   }
 
   // Filter transactions dynamically by dateFilter
@@ -487,16 +500,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
   // Group transactions by entity name (client_name) based on filtered transactions
   const entityBalances = useMemo(() => {
     const map = new Map<string, EntityBalance>()
-
-    // Always seed permanent fixed system entity "منتجع MJS"
-    map.set('منتجع MJS', {
-      name: 'منتجع MJS',
-      depositedCents: 0,
-      withdrawnCents: 0,
-      netCents: 0,
-      transactionCount: 0,
-      isSystemFixed: true,
-    })
 
     // Seed custom registered zero-value entities
     customEntities.forEach((entName) => {
@@ -519,7 +522,6 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
         withdrawnCents: 0,
         netCents: 0,
         transactionCount: 0,
-        isSystemFixed: name === 'منتجع MJS',
       }
 
       if (tx.type === 'DEPOSIT') {
@@ -544,27 +546,27 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
 
     if (minDeposit) {
       const minCents = parseFloat(minDeposit) * 100
-      list = list.filter((e) => e.isSystemFixed || e.depositedCents >= minCents)
+      list = list.filter((e) => e.depositedCents >= minCents)
     }
     if (maxDeposit) {
       const maxCents = parseFloat(maxDeposit) * 100
-      list = list.filter((e) => e.isSystemFixed || e.depositedCents <= maxCents)
+      list = list.filter((e) => e.depositedCents <= maxCents)
     }
     if (minWithdrawal) {
       const minCents = parseFloat(minWithdrawal) * 100
-      list = list.filter((e) => e.isSystemFixed || e.withdrawnCents >= minCents)
+      list = list.filter((e) => e.withdrawnCents >= minCents)
     }
     if (maxWithdrawal) {
       const maxCents = parseFloat(maxWithdrawal) * 100
-      list = list.filter((e) => e.isSystemFixed || e.withdrawnCents <= maxCents)
+      list = list.filter((e) => e.withdrawnCents <= maxCents)
     }
     if (minNet) {
       const minCents = parseFloat(minNet) * 100
-      list = list.filter((e) => e.isSystemFixed || e.netCents >= minCents)
+      list = list.filter((e) => e.netCents >= minCents)
     }
     if (maxNet) {
       const maxCents = parseFloat(maxNet) * 100
-      list = list.filter((e) => e.isSystemFixed || e.netCents <= maxCents)
+      list = list.filter((e) => e.netCents <= maxCents)
     }
 
     // Multi-Sorting
@@ -581,12 +583,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
       }
     })
 
-    // Sort system fixed entity 'منتجع MJS' and pinned entities to top
+    // Sort pinned entities to top
     return list.sort((a, b) => {
-      const isFixedA = a.name === 'منتجع MJS'
-      const isFixedB = b.name === 'منتجع MJS'
-      if (isFixedA !== isFixedB) return isFixedA ? -1 : 1
-
       const pinA = pinnedEntities.includes(a.name) ? 1 : 0
       const pinB = pinnedEntities.includes(b.name) ? 1 : 0
       if (pinA !== pinB) return pinB - pinA
@@ -615,13 +613,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
   const handleBulkArchiveEntities = async () => {
     if (selectedEntityNames.length === 0) return
     playDeleteSound()
-    const hasFixed = selectedEntityNames.includes('منتجع MJS')
-    const namesToArchive = selectedEntityNames.filter((n) => n !== 'منتجع MJS')
+    const namesToArchive = [...selectedEntityNames]
     setSelectedEntityNames([])
-
-    if (hasFixed) {
-      alert('تم استثناء جهة "منتجع MJS" لأنها جهة أساسية في المنظومة لا يمكن أرشفتها')
-    }
 
     namesToArchive.forEach((name) => {
       const ent = entityBalances.find((e) => e.name === name)
@@ -631,13 +624,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
 
   const handleBulkDeleteEntities = async () => {
     if (selectedEntityNames.length === 0) return
-    const hasFixed = selectedEntityNames.includes('منتجع MJS')
-    const namesToDelete = selectedEntityNames.filter((n) => n !== 'منتجع MJS')
+    const namesToDelete = [...selectedEntityNames]
     setSelectedEntityNames([])
-
-    if (hasFixed) {
-      alert('تم استثناء جهة "منتجع MJS" لأنها جهة أساسية في المنظومة لا يمكن حذفها')
-    }
 
     if (namesToDelete.length === 0) return
     if (!confirm(`هل أنت تأكد من نقل ${namesToDelete.length} جهة إلى سلة المحذوفات؟`)) return
@@ -649,10 +637,10 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
     })
 
     if (window.electronAPI?.deleteEntitiesBatch) {
-      await window.electronAPI.deleteEntitiesBatch(namesToDelete, false)
+      await window.electronAPI.deleteEntitiesBatch(namesToDelete, false, activeWallet || 'LYD')
     } else if (window.electronAPI?.deleteEntityTransactions) {
       for (const name of namesToDelete) {
-        await window.electronAPI.deleteEntityTransactions(name, false)
+        await window.electronAPI.deleteEntityTransactions(name, false, activeWallet || 'LYD')
       }
     }
   }
@@ -703,7 +691,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
 
         {/* 3D FISHBOWL HERO WIDGET */}
         <KryptoniteFishbowl
-          totalAmount={formatCurrency(totalBalanceCents)}
+          totalAmount={formatCurrency(totalBalanceCents, currencySymbol)}
+          currencySymbol={currencySymbol}
           onOpenDrawer={(mode) => setDrawerMode(mode)}
         />
 
@@ -718,9 +707,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
             </div>
             <div className="mt-3 flex items-baseline gap-1.5">
               <span className="text-2xl font-bold text-slate-900 dark:text-white ar-num">
-                {formatCurrency(totalDepositsCents)}
+                {formatCurrency(totalDepositsCents, currencySymbol)}
               </span>
-              <span className="text-xs font-semibold text-cyan-600 dark:text-cyan-400">د.ل</span>
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
               <TrendingUp className="w-3 h-3 text-cyan-500" />
@@ -737,9 +725,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
             </div>
             <div className="mt-3 flex items-baseline gap-1.5">
               <span className="text-2xl font-bold text-zinc-900 dark:text-white ar-num">
-                {formatCurrency(totalWithdrawalsCents)}
+                {formatCurrency(totalWithdrawalsCents, currencySymbol)}
               </span>
-              <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">د.ل</span>
             </div>
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 flex items-center gap-1">
               <TrendingDown className="w-3 h-3 text-rose-500" />
@@ -980,9 +967,9 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                     {/* 📌 Pin Button */}
                                     <button
                                       onClick={(e) => handleTogglePin(entity.name, e)}
-                                      title={entity.name === 'منتجع MJS' ? 'جهة أساسية في المنظومة مثبتة دائماً' : isPinned ? 'إلغاء التثبيت' : 'تثبيت في الأعلى'}
+                                      title={isPinned ? 'إلغاء التثبيت' : 'تثبيت في الأعلى'}
                                       className={`w-12 h-full text-white flex items-center justify-center transition-colors active:opacity-90 ${
-                                        isPinned || entity.name === 'منتجع MJS' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-zinc-800 hover:bg-zinc-900'
+                                        isPinned ? 'bg-amber-600 hover:bg-amber-700' : 'bg-zinc-800 hover:bg-zinc-900'
                                       }`}
                                     >
                                       <Pin className="w-4 h-4 fill-current" />
@@ -991,11 +978,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                     {/* 📦 Archive Button */}
                                     <button
                                       onClick={(e) => handleArchive(entity.name, e)}
-                                      title={entity.name === 'منتجع MJS' ? 'جهة أساسية في المنظومة لا يمكن أرشفتها' : 'أرشفة الجهة'}
-                                      disabled={entity.name === 'منتجع MJS'}
-                                      className={`w-12 h-full text-white flex items-center justify-center transition-colors active:opacity-90 ${
-                                        entity.name === 'منتجع MJS' ? 'bg-sky-400/40 cursor-not-allowed' : 'bg-sky-500 hover:bg-sky-600'
-                                      }`}
+                                      title="أرشفة الجهة"
+                                      className="w-12 h-full text-white flex items-center justify-center transition-colors active:opacity-90 bg-sky-500 hover:bg-sky-600"
                                     >
                                       <Archive className="w-4 h-4" />
                                     </button>
@@ -1004,11 +988,8 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                     {canDeleteItems && (
                                       <button
                                         onClick={(e) => handleOpenDeleteConfirm(entity.name, e)}
-                                        title={entity.name === 'منتجع MJS' ? 'جهة أساسية في المنظومة لا يمكن حذفها' : 'حذف الجهة'}
-                                        disabled={entity.name === 'منتجع MJS'}
-                                        className={`w-12 h-full text-white flex items-center justify-center transition-colors active:opacity-90 ${
-                                          entity.name === 'منتجع MJS' ? 'bg-rose-400/40 cursor-not-allowed' : 'bg-rose-500 hover:bg-rose-600'
-                                        }`}
+                                        title="حذف الجهة"
+                                        className="w-12 h-full text-white flex items-center justify-center transition-colors active:opacity-90 bg-rose-500 hover:bg-rose-600"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
@@ -1044,7 +1025,7 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                 )}
                                 {/* 1. اسم الجهة (Entity Name + Pin Badge) */}
                                 <div className="flex-1 min-w-0 text-right font-arabic flex items-center gap-1.5">
-                                  {(isPinned || entity.name === 'منتجع MJS') && (
+                                  {isPinned && (
                                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 shadow-xs shrink-0" title="مثبتة في الأعلى">
                                       <Pin className="w-3 h-3 fill-current" />
                                     </span>
@@ -1056,17 +1037,11 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                     }}
                                     title="انقر لعرض السجل المالي للجهة"
                                     className={`text-xs truncate cursor-pointer font-bold hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors ${
-                                      isPinned || entity.name === 'منتجع MJS' ? 'text-zinc-900 dark:text-white' : 'text-zinc-900 dark:text-zinc-100'
+                                      isPinned ? 'text-zinc-900 dark:text-white' : 'text-zinc-900 dark:text-zinc-100'
                                     }`}
                                   >
                                     {entity.name}
                                   </span>
-
-                                  {entity.name === 'منتجع MJS' && (
-                                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 text-[10px] font-extrabold border border-emerald-300 dark:border-emerald-800">
-                                      جهة أساسية
-                                    </span>
-                                  )}
                                 </div>
 
                                 {/* 2. عدد المعاملات */}
@@ -1079,14 +1054,14 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                 {/* 3. إجمالي المودعات */}
                                 <div className="w-44 text-right font-arabic ar-num">
                                   <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                                    +{formatCurrency(entity.depositedCents)} د.ل
+                                    +{formatCurrency(entity.depositedCents, currencySymbol)}
                                   </span>
                                 </div>
 
                                 {/* 4. إجمالي المسحوبات */}
                                 <div className="w-44 text-right font-arabic ar-num">
                                   <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-                                    -{formatCurrency(entity.withdrawnCents)} د.ل
+                                    -{formatCurrency(entity.withdrawnCents, currencySymbol)}
                                   </span>
                                 </div>
 
@@ -1096,7 +1071,7 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
                                     ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                                     : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                                     }`}>
-                                    {isPositiveNet ? '+' : ''}{formatCurrency(entity.netCents)} د.ل
+                                    {isPositiveNet ? '+' : ''}{formatCurrency(entity.netCents, currencySymbol)}
                                   </span>
                                 </div>
                               </motion.div>
@@ -1150,9 +1125,11 @@ export function TreasuryView({ dateFilter, archivedTreasuryRows = [], deletedTre
         onClose={() => setIsEditEntitiesModalOpen(false)}
         entities={entityBalances}
         onSuccess={(oldName, newName) => {
-          setCustomEntities((prev) =>
-            prev.map((e) => (e === oldName ? newName : e))
-          )
+          setCustomEntities((prev) => {
+            const updated = prev.map((e) => (e === oldName ? newName : e))
+            persistCustomEntities(activeWallet, updated)
+            return updated
+          })
           loadTreasuryData()
         }}
       />

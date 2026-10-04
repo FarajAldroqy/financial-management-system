@@ -11,16 +11,18 @@ import { TrashDrawer } from '@/components/trash/TrashDrawer'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { LoginPage } from '@/components/auth/LoginPage'
 import { WelcomeSplash } from '@/components/auth/WelcomeSplash'
+import { WalletSelectScreen } from '@/components/auth/WalletSelectScreen'
 import { UserAuditModal } from '@/components/dashboard/UserAuditModal'
 import { NotesModal } from '@/components/dashboard/NotesModal'
 import type { Stats, DateFilter, Transaction } from '@/types'
 import { filterTransactionsByDate } from '@/lib/utils'
 import { initAutoBackupListener } from '@/lib/backupManager'
 import { initMockElectronAPI } from '@/lib/mockApi'
-import { BarChart2, Users, Settings, Database, FileText, Sparkles,
+import { Users, Settings, Database, FileText, Sparkles,
   HelpCircle, Search, LayoutDashboard,
 } from 'lucide-react'
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard'
+import { WalletProvider, useWallet } from '@/context/WalletContext'
 
 // Initialize fallback mock API if running in browser mode outside Electron
 initMockElectronAPI()
@@ -69,7 +71,10 @@ const DEFAULT_STATS: Stats = {
   bank_withdrawal_count: 0,
 }
 
-export default function App() {
+// ─── Inner app – rendered only when authenticated + wallet selected ───────────
+function AppShell() {
+  const { activeWallet, clearWallet } = useWallet()
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('is_logged_in') === 'true'
   })
@@ -86,45 +91,67 @@ export default function App() {
   const [dateFilter, setDateFilter] = useState<DateFilter>({ mode: 'NONE' })
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
-  // Archive Drawer & Rows State
+  // Archive Drawer & Rows State (Wallet scoped)
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
   const [archivedDashboardRows, setArchivedDashboardRows] = useState<Transaction[]>([])
-  const [archivedTreasuryRows, setArchivedTreasuryRows] = useState<EntityBalance[]>(() => {
+  const [archivedTreasuryRows, setArchivedTreasuryRows] = useState<EntityBalance[]>([])
+
+  // Load archived treasury rows when activeWallet changes
+  useEffect(() => {
+    if (!activeWallet) return
+    const key = `salla_${activeWallet}_archived_treasury_entities`
     try {
-      const saved = localStorage.getItem('salla_archived_treasury_entities')
-      return saved ? JSON.parse(saved) : []
+      let saved = localStorage.getItem(key)
+      if (!saved && activeWallet === 'LYD') {
+        saved = localStorage.getItem('salla_archived_treasury_entities')
+        if (saved) localStorage.setItem(key, saved)
+      }
+      setArchivedTreasuryRows(saved ? JSON.parse(saved) : [])
     } catch {
-      return []
+      setArchivedTreasuryRows([])
     }
-  })
+  }, [activeWallet])
 
   useEffect(() => {
+    if (!activeWallet) return
     try {
-      localStorage.setItem('salla_archived_treasury_entities', JSON.stringify(archivedTreasuryRows))
+      const key = `salla_${activeWallet}_archived_treasury_entities`
+      localStorage.setItem(key, JSON.stringify(archivedTreasuryRows))
     } catch (e) {
       console.error('Failed to save archived treasury entities:', e)
     }
-  }, [archivedTreasuryRows])
+  }, [activeWallet, archivedTreasuryRows])
 
-  // Trash Drawer & Rows State (Recycle Bin)
+  // Trash Drawer & Rows State (Recycle Bin - Wallet scoped)
   const [isTrashOpen, setIsTrashOpen] = useState(false)
   const [deletedDashboardRows, setDeletedDashboardRows] = useState<Transaction[]>([])
-  const [deletedTreasuryRows, setDeletedTreasuryRows] = useState<EntityBalance[]>(() => {
+  const [deletedTreasuryRows, setDeletedTreasuryRows] = useState<EntityBalance[]>([])
+
+  // Load deleted treasury rows when activeWallet changes
+  useEffect(() => {
+    if (!activeWallet) return
+    const key = `salla_${activeWallet}_deleted_treasury_entities`
     try {
-      const saved = localStorage.getItem('salla_deleted_treasury_entities')
-      return saved ? JSON.parse(saved) : []
+      let saved = localStorage.getItem(key)
+      if (!saved && activeWallet === 'LYD') {
+        saved = localStorage.getItem('salla_deleted_treasury_entities')
+        if (saved) localStorage.setItem(key, saved)
+      }
+      setDeletedTreasuryRows(saved ? JSON.parse(saved) : [])
     } catch {
-      return []
+      setDeletedTreasuryRows([])
     }
-  })
+  }, [activeWallet])
 
   useEffect(() => {
+    if (!activeWallet) return
     try {
-      localStorage.setItem('salla_deleted_treasury_entities', JSON.stringify(deletedTreasuryRows))
+      const key = `salla_${activeWallet}_deleted_treasury_entities`
+      localStorage.setItem(key, JSON.stringify(deletedTreasuryRows))
     } catch (e) {
       console.error('Failed to save deleted treasury entities:', e)
     }
-  }, [deletedTreasuryRows])
+  }, [activeWallet, deletedTreasuryRows])
 
   // Settings Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -138,6 +165,22 @@ export default function App() {
   // Animated Welcome Splash State
   const [showSplash, setShowSplash] = useState(false)
   const [splashDisplayName, setSplashDisplayName] = useState('')
+
+  // ── Wallet switch: reset all local wallet-scoped state ───────────────────
+  const handleWalletSwitch = useCallback(() => {
+    setArchivedDashboardRows([])
+    setDeletedDashboardRows([])
+    setStats(DEFAULT_STATS)
+    setActiveSection('dashboard')
+    setDateFilter({ mode: 'NONE' })
+    setSearch('')
+  }, [])
+
+  // When activeWallet changes (after switch), re-fetch stats
+  useEffect(() => {
+    if (activeWallet) fetchStats()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWallet])
 
   const handleLoginSuccess = () => {
     const name = sessionStorage.getItem('current_display_name') || sessionStorage.getItem('current_username') || 'admin'
@@ -158,11 +201,12 @@ export default function App() {
     }
     setStatsLoading(true)
     try {
+      const walletType = activeWallet || 'LYD'
       const [s, activeResult, archResult, trashResult] = await Promise.all([
-        window.electronAPI.getStats(),
-        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ACTIVE' }),
-        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ARCHIVED' }),
-        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'TRASH' }),
+        window.electronAPI.getStats({ wallet_type: walletType }),
+        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ACTIVE', wallet_type: walletType }),
+        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'ARCHIVED', wallet_type: walletType }),
+        window.electronAPI.getTransactions({ page: 1, pageSize: 1000, status: 'TRASH', wallet_type: walletType }),
       ])
 
       if (archResult?.data) setArchivedDashboardRows(archResult.data)
@@ -229,7 +273,7 @@ export default function App() {
     } finally {
       setStatsLoading(false)
     }
-  }, [dateFilter])
+  }, [dateFilter, activeWallet])
 
   useEffect(() => {
     fetchStats()
@@ -262,20 +306,29 @@ export default function App() {
 
   const removeCustomEntityFromLocalStorage = (name: string) => {
     try {
-      const saved = localStorage.getItem('salla_treasury_custom_entities')
+      const key = activeWallet ? `salla_${activeWallet}_treasury_custom_entities` : 'salla_treasury_custom_entities'
+      const saved = localStorage.getItem(key)
       if (saved) {
         const list: string[] = JSON.parse(saved)
         const updated = list.filter((n) => n.trim().toLowerCase() !== name.trim().toLowerCase())
-        localStorage.setItem('salla_treasury_custom_entities', JSON.stringify(updated))
+        localStorage.setItem(key, JSON.stringify(updated))
+      }
+      if (!activeWallet || activeWallet === 'LYD') {
+        const legacySaved = localStorage.getItem('salla_treasury_custom_entities')
+        if (legacySaved) {
+          const list: string[] = JSON.parse(legacySaved)
+          const updated = list.filter((n) => n.trim().toLowerCase() !== name.trim().toLowerCase())
+          localStorage.setItem('salla_treasury_custom_entities', JSON.stringify(updated))
+        }
       }
     } catch (e) {
-      console.error('Failed to update salla_treasury_custom_entities on permanent delete:', e)
+      console.error('Failed to update treasury_custom_entities on permanent delete:', e)
     }
   }
 
   const handlePermanentDeleteTreasuryEntity = async (name: string) => {
     if (window.electronAPI?.deleteEntityTransactions) {
-      await window.electronAPI.deleteEntityTransactions(name, true)
+      await window.electronAPI.deleteEntityTransactions(name, true, activeWallet || 'LYD')
       await fetchStats()
     }
     removeCustomEntityFromLocalStorage(name)
@@ -302,7 +355,7 @@ export default function App() {
 
   const handleRestoreTreasuryTrashEntity = async (name: string) => {
     if (window.electronAPI?.restoreEntityTransactions) {
-      await window.electronAPI.restoreEntityTransactions(name)
+      await window.electronAPI.restoreEntityTransactions(name, activeWallet || 'LYD')
       await fetchStats()
     }
     setDeletedTreasuryRows((prev) => prev.filter((r) => r.name !== name))
@@ -310,13 +363,67 @@ export default function App() {
 
   const handlePermanentDeleteTreasuryTrashEntity = async (name: string) => {
     if (window.electronAPI?.deleteEntityTransactions) {
-      await window.electronAPI.deleteEntityTransactions(name, true)
+      await window.electronAPI.deleteEntityTransactions(name, true, activeWallet || 'LYD')
       await fetchStats()
     }
     removeCustomEntityFromLocalStorage(name)
     setDeletedTreasuryRows((prev) => prev.filter((r) => r.name !== name))
     setArchivedTreasuryRows((prev) => prev.filter((r) => r.name !== name))
   }
+
+  // --- High-Performance Batch Handlers (Single DB query + single state refresh) ---
+  const handleRestoreDashboardRowsBatch = async (ids: number[]) => {
+    if (window.electronAPI?.restoreTransactionsBatch) {
+      await window.electronAPI.restoreTransactionsBatch(ids)
+    }
+    const idSet = new Set(ids)
+    setArchivedDashboardRows((prev) => prev.filter((r) => !idSet.has(r.id)))
+    setDeletedDashboardRows((prev) => prev.filter((r) => !idSet.has(r.id)))
+    await fetchStats()
+  }
+
+  const handlePermanentDeleteDashboardRowsBatch = async (ids: number[]) => {
+    if (window.electronAPI?.deleteTransactionsBatch) {
+      await window.electronAPI.deleteTransactionsBatch(ids, true)
+    }
+    const idSet = new Set(ids)
+    setArchivedDashboardRows((prev) => prev.filter((r) => !idSet.has(r.id)))
+    setDeletedDashboardRows((prev) => prev.filter((r) => !idSet.has(r.id)))
+    await fetchStats()
+  }
+
+  const handleRestoreTreasuryEntitiesBatch = async (names: string[]) => {
+    if (window.electronAPI?.restoreEntitiesBatch) {
+      await window.electronAPI.restoreEntitiesBatch(names, activeWallet || 'LYD')
+    }
+    const nameSet = new Set(names.map((n) => n.trim().toLowerCase()))
+    setArchivedTreasuryRows((prev) => prev.filter((r) => !nameSet.has(r.name.trim().toLowerCase())))
+    setDeletedTreasuryRows((prev) => prev.filter((r) => !nameSet.has(r.name.trim().toLowerCase())))
+    await fetchStats()
+  }
+
+  const handlePermanentDeleteTreasuryEntitiesBatch = async (names: string[]) => {
+    if (window.electronAPI?.deleteEntitiesBatch) {
+      await window.electronAPI.deleteEntitiesBatch(names, true, activeWallet || 'LYD')
+    }
+    names.forEach(removeCustomEntityFromLocalStorage)
+    const nameSet = new Set(names.map((n) => n.trim().toLowerCase()))
+    setArchivedTreasuryRows((prev) => prev.filter((r) => !nameSet.has(r.name.trim().toLowerCase())))
+    setDeletedTreasuryRows((prev) => prev.filter((r) => !nameSet.has(r.name.trim().toLowerCase())))
+    await fetchStats()
+  }
+
+  // Global Pointer Events Watchdog: Ensures UI input fields never get locked or frozen
+  useEffect(() => {
+    const unlockBody = () => {
+      if (document.body.style.pointerEvents === 'none') {
+        document.body.style.pointerEvents = 'auto'
+      }
+    }
+    unlockBody()
+    const timer = setInterval(unlockBody, 300)
+    return () => clearInterval(timer)
+  }, [])
 
   const totalArchivedCount = archivedDashboardRows.length + archivedTreasuryRows.length
   const totalDeletedCount = deletedDashboardRows.length + deletedTreasuryRows.length
@@ -401,6 +508,11 @@ export default function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />
   }
 
+  // ── Step 3: Wallet picker (shown once per session after login/splash) ────
+  if (!activeWallet) {
+    return <WalletSelectScreen />
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 select-none transition-colors duration-300">
       {/* Sidebar with embedded Calendar widget & Conditional Archive/Trash buttons */}
@@ -417,6 +529,7 @@ export default function App() {
         onOpenTrash={() => setIsTrashOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNotes={() => setIsNotesOpen(true)}
+        onWalletSwitch={handleWalletSwitch}
       />
 
       {/* Main Content Area */}
@@ -429,6 +542,7 @@ export default function App() {
           dateFilter={dateFilter}
           onResetDateFilter={() => setDateFilter({ mode: 'NONE' })}
           onToggleSidebar={handleToggleSidebar}
+          onWalletSwitch={handleWalletSwitch}
         />
 
         {/* Scrollable Page Content */}
@@ -447,6 +561,10 @@ export default function App() {
         onPermanentDeleteDashboardRow={handlePermanentDeleteDashboardRow}
         onRestoreTreasuryEntity={handleRestoreTreasuryEntity}
         onPermanentDeleteTreasuryEntity={handlePermanentDeleteTreasuryEntity}
+        onRestoreDashboardRowsBatch={handleRestoreDashboardRowsBatch}
+        onPermanentDeleteDashboardRowsBatch={handlePermanentDeleteDashboardRowsBatch}
+        onRestoreTreasuryEntitiesBatch={handleRestoreTreasuryEntitiesBatch}
+        onPermanentDeleteTreasuryEntitiesBatch={handlePermanentDeleteTreasuryEntitiesBatch}
       />
 
       {/* Trash Drawer (Recycle Bin) */}
@@ -459,13 +577,20 @@ export default function App() {
         onPermanentDeleteDashboardRow={handlePermanentDeleteDashboardTrashRow}
         onRestoreTreasuryEntity={handleRestoreTreasuryTrashEntity}
         onPermanentDeleteTreasuryEntity={handlePermanentDeleteTreasuryTrashEntity}
+        onRestoreDashboardRowsBatch={handleRestoreDashboardRowsBatch}
+        onPermanentDeleteDashboardRowsBatch={handlePermanentDeleteDashboardRowsBatch}
+        onRestoreTreasuryEntitiesBatch={handleRestoreTreasuryEntitiesBatch}
+        onPermanentDeleteTreasuryEntitiesBatch={handlePermanentDeleteTreasuryEntitiesBatch}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         open={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onLogout={() => setIsAuthenticated(false)}
+        onLogout={() => {
+          clearWallet()
+          setIsAuthenticated(false)
+        }}
       />
 
       {/* User 1-Week Non-Repudiation Audit Log Modal */}
@@ -480,5 +605,14 @@ export default function App() {
         onClose={() => setIsNotesOpen(false)}
       />
     </div>
+  )
+}
+
+// ─── Root export – wraps everything in WalletProvider ─────────────────────────
+export default function App() {
+  return (
+    <WalletProvider>
+      <AppShell />
+    </WalletProvider>
   )
 }

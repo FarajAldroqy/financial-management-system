@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Transaction } from '@/types'
 import { getReceiptSerial } from './PrintReceipt'
 import { getSystemAuditLogs, SystemAuditLogEntry } from '@/lib/auditLogger'
+import { useWallet } from '@/context/WalletContext'
 
 interface UserAuditModalProps {
   open: boolean
@@ -63,6 +64,7 @@ export function UserAuditModal({ open, onClose }: UserAuditModalProps) {
   const currentUsername = sessionStorage.getItem('current_username') || 'admin'
   const isAdmin = currentUsername.toLowerCase() === 'admin'
 
+  const { activeWallet } = useWallet()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [auditLogs, setAuditLogs] = useState<SystemAuditLogEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -79,7 +81,11 @@ export function UserAuditModal({ open, onClose }: UserAuditModalProps) {
       setLoading(true)
       try {
         if (window.electronAPI?.getTransactions) {
-          const res = await window.electronAPI.getTransactions({ page: 1, pageSize: 1000 })
+          const res = await window.electronAPI.getTransactions({
+            page: 1,
+            pageSize: 1000,
+            wallet_type: activeWallet || 'LYD',
+          })
           if (isMounted) setTransactions(res.data)
         }
         if (isMounted) {
@@ -96,7 +102,7 @@ export function UserAuditModal({ open, onClose }: UserAuditModalProps) {
     return () => {
       isMounted = false
     }
-  }, [open])
+  }, [open, activeWallet])
 
   // Combine financial transactions and logged system audit actions into unified events
   const allEvents = useMemo(() => {

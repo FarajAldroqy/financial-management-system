@@ -5,7 +5,7 @@
 // =====================================================================
 
 import type { Transaction } from '@/types'
-import { formatCurrency } from './utils'
+import { formatCurrency, getActiveWalletSymbol } from './utils'
 
 /**
  * Trigger a file download in the browser.
@@ -50,13 +50,14 @@ function buildCsv(headers: string[], rows: (string | number | undefined | null)[
  * Includes UTF-8 BOM so Excel reads Arabic text correctly.
  */
 export function exportTransactionsToCsv(transactions: Transaction[], filename?: string): void {
+  const currencySymbol = getActiveWalletSymbol()
   const headers = [
     'الرقم التسلسلي',
     'الجهة / العميل',
     'النوع',
     'النوع الفرعي',
     'اسم الشخص',
-    'المبلغ (د.ل)',
+    `المبلغ (${currencySymbol})`,
     'طريقة الدفع',
     'الحالة',
     'الملاحظات',

@@ -1,6 +1,7 @@
 import { Sidebar as SidebarIcon, Search, Calendar as CalendarIcon, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { DarkModeToggle } from '@/components/ui/DarkModeToggle'
+import { WalletSwitcher } from '@/components/ui/WalletSwitcher'
 import type { DateFilter } from '@/types'
 
 const MONTH_NAMES_AR = [
@@ -15,6 +16,8 @@ interface HeaderProps {
   dateFilter?: DateFilter
   onResetDateFilter?: () => void
   onToggleSidebar?: () => void
+  /** Called after wallet switch so parent can reset local state */
+  onWalletSwitch?: () => void
 }
 
 export function Header({
@@ -24,6 +27,7 @@ export function Header({
   dateFilter,
   onResetDateFilter,
   onToggleSidebar,
+  onWalletSwitch,
 }: HeaderProps) {
   let filterText = ''
   if (dateFilter && dateFilter.mode === 'YEAR') {
@@ -76,8 +80,13 @@ export function Header({
       {/* Center Draggable Spacer Area */}
       <div className="flex-1 h-full app-drag-region min-w-4 cursor-default" />
 
-      {/* Right side: Dark Mode Toggle & Search */}
+      {/* Right side: Wallet Switcher + Dark Mode Toggle + Search */}
       <div className="flex items-center gap-3.5 app-no-drag">
+        {/* Compact Wallet Switcher */}
+        <div className="app-no-drag">
+          <WalletSwitcher variant="compact" onSwitch={onWalletSwitch} />
+        </div>
+
         {/* Dark Mode Toggle Button */}
         <div className="app-no-drag">
           <DarkModeToggle />

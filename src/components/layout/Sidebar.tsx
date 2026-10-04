@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import type { DateFilter } from '@/types'
 import { SidebarCalendar } from '@/components/sidebar/SidebarCalendar'
 import logoImg from '@/assets/logo.png'
+import { WalletSwitcher } from '@/components/ui/WalletSwitcher'
 
 interface NavItem {
   id: string
@@ -37,6 +38,8 @@ interface SidebarProps {
   onOpenTrash?: () => void
   onOpenSettings?: () => void
   onOpenNotes?: () => void
+  /** Called after the user switches or clears the active wallet */
+  onWalletSwitch?: () => void
 }
 
 export function Sidebar({
@@ -52,6 +55,7 @@ export function Sidebar({
   onOpenTrash,
   onOpenSettings,
   onOpenNotes,
+  onWalletSwitch,
 }: SidebarProps) {
   const currentDisplayName = sessionStorage.getItem('current_display_name') || sessionStorage.getItem('current_username') || 'admin'
   const hasArchivedItems = archivedCount > 0
@@ -64,14 +68,14 @@ export function Sidebar({
         isOpen ? 'w-60 opacity-100' : 'w-0 opacity-0 border-r-0 pointer-events-none'
       )}
     >
-      {/* 1. Header / Logo (منتجع MJS) */}
+      {/* 1. Header / Logo (منظومة إدارة مالية) */}
       <div className="flex items-center justify-between px-3.5 pt-7 pb-3 whitespace-nowrap app-drag-region">
-        <div className="flex items-center gap-1 font-arabic">
-          <div className="relative w-14 h-14 bg-white dark:bg-slate-900 rounded-full border-2 border-cyan-500/40 dark:border-cyan-400/50 shadow-md shadow-cyan-500/10 flex items-center justify-center shrink-0 overflow-hidden p-0">
+        <div className="flex items-center gap-2 font-arabic">
+          <div className="relative w-12 h-12 bg-white dark:bg-slate-900 rounded-full border-2 border-amber-500/40 dark:border-cyan-400/50 shadow-md shadow-cyan-500/10 flex items-center justify-center shrink-0 overflow-hidden p-0">
             <img
               src={logoImg}
-              alt="شعار منتجع MJS"
-              className="w-full h-full object-cover scale-[1.12]"
+              alt="شعار منظومة إدارة مالية"
+              className="w-full h-full object-cover"
               style={{ imageRendering: 'crisp-edges' }}
               onError={(e) => {
                 (e.target as HTMLElement).style.display = 'none'
@@ -81,11 +85,11 @@ export function Sidebar({
               م
             </span>
           </div>
-          <div className="flex flex-col text-right translate-y-[7px] -mr-1">
-            <span className="font-extrabold text-2xl text-slate-900 dark:text-slate-100 leading-none tracking-tight">
-              منتجع MJS
+          <div className="flex flex-col text-right translate-y-[2px]">
+            <span className="font-extrabold text-lg text-slate-900 dark:text-slate-100 leading-tight tracking-tight">
+              منظومة إدارة مالية
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
               إدارة السيولة والخزينة
             </span>
           </div>
@@ -202,6 +206,9 @@ export function Sidebar({
         {/* 3. Calendar Widget directly below menu items */}
         <SidebarCalendar dateFilter={dateFilter} onDateFilterChange={onDateFilterChange} />
       </div>
+
+      {/* Wallet Switcher – above settings */}
+      <WalletSwitcher variant="full" onSwitch={onWalletSwitch} />
 
       {/* 4. Settings Button at the very bottom */}
       <div className="p-3 border-t border-slate-200/80 dark:border-slate-800">
