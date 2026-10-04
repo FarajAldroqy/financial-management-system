@@ -1,7 +1,7 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.mjsresort.app",
+  "appId": "com.financesystem.app",
   "asar": true,
   "productName": "منظومة إدارة مالية",
   "directories": {
@@ -10,19 +10,19 @@
   // Vite bundles the whole renderer into dist/, so no renderer dependency needs to
   // ship as a node_modules copy. better-sqlite3 is the sole exception: it is required
   // at runtime by the main process and must stay on disk.
-  // NOTE: only the win32-x64 prebuild is included. If a mac/linux target is ever built,
-  // widen the prebuilds line below to the matching platform binary.
   "files": [
     "dist/**",
     "dist-electron/**",
     "!node_modules/**",
     "node_modules/better-sqlite3/package.json",
     "node_modules/better-sqlite3/lib/**",
-    "node_modules/better-sqlite3/prebuilds/win32-x64.node"
+    "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+    "node_modules/better-sqlite3/prebuilds/**"
   ],
   // Native .node binaries cannot be dlopen'd from inside an asar archive. Unpacking
   // them to app.asar.unpacked is what prevents "could not locate the bindings file".
   "asarUnpack": [
+    "node_modules/better-sqlite3/build/Release/**",
     "node_modules/better-sqlite3/prebuilds/**"
   ],
   "mac": {

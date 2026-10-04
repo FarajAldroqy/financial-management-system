@@ -49,22 +49,22 @@ jobs:
       - name: Upload Windows Executable Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Salla-Finance-Windows-x64
+          name: Financial-System-Windows-x64
           path: release/*.exe
           if-no-files-found: error
 
-      # Actions artifacts are always zipped and require a signed-in GitHub account
-      # to download. Releases serve the raw .exe at a public URL, so tagged builds
-      # are published there for actual distribution.
+      # Releases serve the raw .exe at a public URL for direct one-click download.
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $assets = Get-ChildItem -Path release -Filter *.exe | ForEach-Object { $_.FullName }
           if (-not $assets) { throw "No .exe files found in release/ to publish" }
-          Write-Host "Publishing $($assets.Count) asset(s) for $env:GITHUB_REF_NAME"
-          gh release create $env:GITHUB_REF_NAME $assets `
-            --title $env:GITHUB_REF_NAME `
-            --generate-notes
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v1.0.0" }
+          Write-Host "Publishing $($assets.Count) asset(s) for $tag"
+          gh release create $tag $assets `
+            --title "منظومة إدارة مالية - $tag" `
+            --generate-notes `
+            --clobber
