@@ -8,62 +8,23 @@ import type {
   ChartDataPoint,
   GetChartDataParams,
 } from '@/types'
+import { getLocalDeviceISOString } from './utils'
 
-const STORAGE_KEY = 'salla_mock_transactions_v2'
+const STORAGE_KEY = 'salla_mock_transactions_clean_v4'
 
-const INITIAL_TRANSACTIONS: Transaction[] = [
-  {
-    id: 1,
-    client_name: 'شركة النماء للمقاولات',
-    type: 'DEPOSIT',
-    amount_cents: 15000000,
-    payment_method: 'نقداً',
-    status: 'COMPLETED',
-    wallet_type: 'LYD',
-    is_pinned: 1,
-    is_archived: 0,
-    is_deleted: 0,
-    created_at: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-  },
-  {
-    id: 2,
-    client_name: 'مؤسسة الأفق للتجارة',
-    type: 'WITHDRAWAL',
-    amount_cents: 4500000,
-    payment_method: 'تحويل مصرفي',
-    status: 'COMPLETED',
-    wallet_type: 'LYD',
-    is_pinned: 0,
-    is_archived: 0,
-    is_deleted: 0,
-    created_at: new Date(Date.now() - 3600000 * 24 * 5).toISOString(),
-  },
-  {
-    id: 3,
-    client_name: 'صندوق الإيرادات',
-    type: 'DEPOSIT',
-    amount_cents: 50000000,
-    payment_method: 'نقداً',
-    status: 'COMPLETED',
-    wallet_type: 'LYD',
-    is_pinned: 1,
-    is_archived: 0,
-    is_deleted: 0,
-    created_at: new Date(Date.now() - 3600000 * 24 * 10).toISOString(),
-  },
-]
+const INITIAL_TRANSACTIONS: Transaction[] = []
 
 function getStoredTransactions(): Transaction[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_TRANSACTIONS))
-      return INITIAL_TRANSACTIONS
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
+      return []
     }
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_TRANSACTIONS))
-      return INITIAL_TRANSACTIONS
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
+      return []
     }
     return parsed.map((t, idx) => ({
       ...t,
@@ -72,10 +33,10 @@ function getStoredTransactions(): Transaction[] {
       is_pinned: t.is_pinned ?? 0,
       is_archived: t.is_archived ?? 0,
       is_deleted: t.is_deleted ?? 0,
-      payment_method: t.payment_method || 'نقداً',
+      payment_method: t.payment_method === 'تحويل مصرفي' ? 'بنك' : (t.payment_method || 'نقداً'),
     }))
   } catch {
-    return INITIAL_TRANSACTIONS
+    return []
   }
 }
 
@@ -161,7 +122,7 @@ export function initMockElectronAPI() {
         is_pinned: 0,
         is_archived: 0,
         is_deleted: 0,
-        created_at: new Date().toISOString(),
+        created_at: payload.created_at || getLocalDeviceISOString(),
       }
       saveStoredTransactions([newTx, ...all])
       return newTx

@@ -221,7 +221,7 @@ export function EntityLedgerModal({
                     {tx.type === 'DEPOSIT' ? 'إيداع' : 'سحب'}
                   </td>
                   <td className="border border-black py-1.5 px-2 text-center">
-                    {tx.payment_method === 'CASH' ? 'نقداً' : 'تحويل مصرفي'}
+                    {tx.payment_method === 'CASH' || tx.payment_method === 'نقداً' ? 'نقداً' : 'بنك'}
                   </td>
                   <td className="border border-black py-1.5 px-2 text-left font-bold ar-num">
                     {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount_cents)}
@@ -430,7 +430,7 @@ export function EntityLedgerModal({
                               </td>
                               <td className="py-3 px-4 text-center font-medium">
                                 <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-[10px]">
-                                  {tx.payment_method === 'CASH' ? 'نقداً' : tx.payment_method === 'BANK_TRANSFER' ? 'تحويل مصرفي' : tx.payment_method}
+                                  {tx.payment_method === 'CASH' || tx.payment_method === 'نقداً' ? 'نقداً' : tx.payment_method === 'BANK_TRANSFER' || tx.payment_method === 'تحويل مصرفي' || tx.payment_method === 'بنك' ? 'بنك' : tx.payment_method}
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-left font-bold ar-num">

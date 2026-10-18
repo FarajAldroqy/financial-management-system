@@ -37,7 +37,6 @@ export function TransactionsReportModal({
   open,
   onClose,
   transactions,
-  stats: _stats,
   dateFilter,
 }: TransactionsReportModalProps) {
   const { hasPermission } = usePermission()
@@ -111,12 +110,17 @@ export function TransactionsReportModal({
   return (
     <>
       {/* -------------------- PRINT MEDIA DOM CONTAINER (Exact Custom Output) -------------------- */}
-      <div id="printable-custom-report" className="hidden print:block font-arabic select-none bg-white text-zinc-950 p-6 w-[210mm] min-h-[297mm] box-border">
+      <div id="printable-custom-report" className="hidden print:block font-arabic select-none bg-white text-zinc-950 p-6 w-full box-border">
         <style>{`
           @media print {
             * {
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
+            }
+            html, body {
+              background: white !important;
+              margin: 0 !important;
+              padding: 0 !important;
             }
             body * {
               visibility: hidden !important;
@@ -127,19 +131,32 @@ export function TransactionsReportModal({
               print-color-adjust: exact !important;
             }
             #printable-custom-report {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 210mm !important;
-              min-height: 297mm !important;
+              position: static !important;
+              display: block !important;
+              width: 100% !important;
+              max-width: 100% !important;
               background: white !important;
               color: black !important;
-              padding: 8mm !important;
+              padding: 6mm !important;
+              margin: 0 auto !important;
               box-sizing: border-box !important;
+            }
+            table {
+              page-break-inside: auto;
+            }
+            tr {
+              page-break-inside: avoid;
+              page-break-after: auto;
+            }
+            thead {
+              display: table-header-group;
+            }
+            tfoot {
+              display: table-footer-group;
             }
             @page {
               size: A4 portrait;
-              margin: 0;
+              margin: 8mm;
             }
           }
         `}</style>
@@ -154,7 +171,7 @@ export function TransactionsReportModal({
           <div className="text-center flex-1 space-y-1">
             <h1 className="font-black text-2xl text-zinc-950 tracking-tight leading-tight">منظومة إدارة مالية</h1>
             <p className="text-sm font-extrabold text-zinc-700">تقرير المعاملات والحركات المالية المخصصة</p>
-            <p className="text-xs text-zinc-500 font-bold ar-num">{filterText}</p>
+            <p className="text-xs text-zinc-500 font-bold ar-num">{filterText} • إجمالي المعاملات المدرجة بالتقرير: {transactions.length}</p>
           </div>
           <div className="w-24 sm:w-28 shrink-0 hidden sm:block pointer-events-none" />
         </div>
@@ -184,7 +201,7 @@ export function TransactionsReportModal({
               <div className="p-3.5 rounded-xl border-2 border-sky-200 bg-sky-50/70">
                 <span className="text-xs font-bold text-sky-800 block">عدد الإيداعات</span>
                 <span className="text-xl font-black text-sky-950 ar-num block mt-1">
-                  {depCount} معاملة <span className="text-xs text-sky-700 font-bold">(نقداً: {cashDep} | مصرفي: {bankDep})</span>
+                  {depCount} معاملة <span className="text-xs text-sky-700 font-bold">(نقداً: {cashDep} | بنك: {bankDep})</span>
                 </span>
               </div>
             )}
@@ -193,7 +210,7 @@ export function TransactionsReportModal({
               <div className="p-3.5 rounded-xl border-2 border-amber-200 bg-amber-50/70">
                 <span className="text-xs font-bold text-amber-800 block">عدد السحوبات</span>
                 <span className="text-xl font-black text-amber-950 ar-num block mt-1">
-                  {withdCount} معاملة <span className="text-xs text-amber-700 font-bold">(نقداً: {cashWithd} | مصرفي: {bankWithd})</span>
+                  {withdCount} معاملة <span className="text-xs text-amber-700 font-bold">(نقداً: {cashWithd} | بنك: {bankWithd})</span>
                 </span>
               </div>
             )}
@@ -268,12 +285,12 @@ export function TransactionsReportModal({
               <div>
                 <h2 className="text-base font-extrabold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                   <span>تخصيص وطباعة التقرير الشامل</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                    معاينة حية فورية
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 ar-num">
+                    {transactions.length} معاملة
                   </span>
                 </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  حدد الأعمدة والبطاقات المراد إدراجها وشاهد التقرير المباشر أثناء التخصيص
+                  يتضمن هذا التقرير {transactions.length} معاملة مالية — حدد الأعمدة والبطاقات وشاهد المعاينة المباشرة
                 </p>
               </div>
             </div>
@@ -342,7 +359,7 @@ export function TransactionsReportModal({
                     onClick={() => toggleColumn('paymentMethod')}
                     className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-right cursor-pointer"
                   >
-                    <span>أسلوب الدفع (نقداً / مصرفي)</span>
+                    <span>أسلوب الدفع (نقداً / بنك)</span>
                     {columns.paymentMethod ? <CheckSquare className="w-4 h-4 text-emerald-600" /> : <Square className="w-4 h-4 text-zinc-400" />}
                   </button>
 
@@ -439,7 +456,7 @@ export function TransactionsReportModal({
                   <div className="text-center flex-1 space-y-1">
                     <h1 className="font-black text-xl sm:text-2xl text-zinc-950 tracking-tight leading-tight">منظومة إدارة مالية</h1>
                     <p className="text-xs sm:text-sm font-extrabold text-zinc-700">تقرير المعاملات والحركات المالية المخصصة</p>
-                    <p className="text-[11px] sm:text-xs text-zinc-500 font-bold ar-num">{filterText}</p>
+                    <p className="text-[11px] sm:text-xs text-zinc-500 font-bold ar-num">{filterText} • إجمالي المعاملات بالتقرير: {transactions.length}</p>
                   </div>
                   <div className="w-24 sm:w-28 shrink-0 hidden sm:block pointer-events-none" />
                 </div>
@@ -469,7 +486,7 @@ export function TransactionsReportModal({
                       <div className="p-3 rounded-xl border border-sky-200 bg-sky-50/70">
                         <span className="text-[11px] font-bold text-sky-800 block">عدد الإيداعات</span>
                         <span className="text-lg font-black text-sky-950 ar-num block mt-0.5">
-                          {depCount} معاملة <span className="text-[11px] text-sky-700 font-bold">(نقداً: {cashDep} | مصرفي: {bankDep})</span>
+                          {depCount} معاملة <span className="text-[11px] text-sky-700 font-bold">(نقداً: {cashDep} | بنك: {bankDep})</span>
                         </span>
                       </div>
                     )}
@@ -478,7 +495,7 @@ export function TransactionsReportModal({
                       <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/70">
                         <span className="text-[11px] font-bold text-amber-800 block">عدد السحوبات</span>
                         <span className="text-lg font-black text-amber-950 ar-num block mt-0.5">
-                          {withdCount} معاملة <span className="text-[11px] text-amber-700 font-bold">(نقداً: {cashWithd} | مصرفي: {bankWithd})</span>
+                          {withdCount} معاملة <span className="text-[11px] text-amber-700 font-bold">(نقداً: {cashWithd} | بنك: {bankWithd})</span>
                         </span>
                       </div>
                     )}

@@ -29,3 +29,10 @@ release/
 dist/
 dist-electron/
 node_modules/
+
+# Databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

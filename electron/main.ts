@@ -90,14 +90,14 @@ function initDatabase() {
         is_pinned      INTEGER NOT NULL DEFAULT 0,
         is_archived    INTEGER NOT NULL DEFAULT 0,
         is_deleted     INTEGER NOT NULL DEFAULT 0,
-        created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
       );
 
       CREATE TABLE IF NOT EXISTS transaction_notes (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         transaction_id INTEGER NOT NULL UNIQUE,
         notes          TEXT    NOT NULL DEFAULT '',
-        updated_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY(transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
       );
     `)
@@ -314,6 +314,7 @@ function registerIpcHandlers() {
     notes?: string
     status?: string
     wallet_type?: string
+    created_at?: string
   }) => {
     try {
       const paymentMethod = payload.payment_method || 'نقداً'
@@ -357,11 +358,17 @@ function registerIpcHandlers() {
         }
       } catch {}
 
+      // Capture exact local device time
+      const now = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const defaultLocalCreatedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+      const createdAt = payload.created_at || defaultLocalCreatedAt
+
       let result: any
       try {
         const stmt = db.prepare(`
-          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
         `)
         result = stmt.run(
           payload.client_name,
@@ -373,12 +380,13 @@ function registerIpcHandlers() {
           paymentMethod,
           status,
           notes,
-          walletType
+          walletType,
+          createdAt
         )
       } catch {
         const stmtFallback = db.prepare(`
-          INSERT INTO transactions (client_name, type, amount_cents, payment_method, status, wallet_type)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO transactions (client_name, type, amount_cents, payment_method, status, wallet_type, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `)
         result = stmtFallback.run(
           payload.client_name,
@@ -386,7 +394,8 @@ function registerIpcHandlers() {
           payload.amount_cents,
           paymentMethod,
           status,
-          walletType
+          walletType,
+          createdAt
         )
       }
 

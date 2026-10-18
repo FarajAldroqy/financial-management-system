@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Pin, Trash2, Archive, FileText, Edit3, Loader2, Download,
 } from 'lucide-react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { formatCurrency, formatDate, filterTransactionsByDate } from '@/lib/utils'
+import { formatCurrency, formatDate, filterTransactionsByDate, getLocalDeviceISOString } from '@/lib/utils'
 import type { Transaction, TransactionCreate, DateFilter } from '@/types'
 import { TransactionModal } from './TransactionModal'
 import { EditTransactionModal } from './EditTransactionModal'
@@ -53,17 +53,27 @@ interface TransactionsTableProps {
   searchValue: string
   onStatsRefresh: () => void
   dateFilter?: DateFilter
+  paymentMethodFilter?: 'ALL' | 'نقداً' | 'بنك'
   onArchiveRow?: (tx: Transaction) => void
   onDeleteRow?: (tx: Transaction) => void
 }
 
-export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onArchiveRow, onDeleteRow }: TransactionsTableProps) {
+export function TransactionsTable({
+  searchValue,
+  onStatsRefresh,
+  dateFilter,
+  paymentMethodFilter = 'ALL',
+  onArchiveRow,
+  onDeleteRow,
+}: TransactionsTableProps) {
   const { hasPermission } = usePermission()
   const canEditData = hasPermission('edit_data')
   const canDeleteItems = hasPermission('delete_items')
-  const { activeWallet, activeWalletMeta } = useWallet()
+  const { activeWallet } = useWallet()
 
   const [data, setData] = useState<Transaction[]>([])
+  const [allFilteredTransactions, setAllFilteredTransactions] = useState<Transaction[]>([])
+  const transactionCacheRef = useRef<Map<number, Transaction>>(new Map())
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL'>('ALL')
@@ -120,101 +130,105 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     setLoading(true)
     try {
       const walletType = activeWallet || 'LYD'
-      const hasCustomFilters =
-        (dateFilter && dateFilter.mode !== 'NONE') ||
-        dashboardFilter.paymentMethod !== 'ALL' ||
-        dashboardFilter.minAmount.trim() !== '' ||
-        dashboardFilter.maxAmount.trim() !== '' ||
-        dashboardFilter.sortDateOrder !== 'desc' ||
-        dashboardFilter.sortByAmount !== 'none' ||
-        typeFilter !== 'ALL' ||
-        dashboardFilter.type !== 'ALL'
-
       const effectiveType = typeFilter !== 'ALL' ? typeFilter : dashboardFilter.type
 
-      if (hasCustomFilters) {
-        const result = await window.electronAPI.getTransactions({
-          page: 1,
-          pageSize: 1000,
-          search: searchValue,
-          type: effectiveType,
-          status: 'ACTIVE',
-          wallet_type: walletType,
-        })
-        let items = result.data || []
+      // Always fetch all active records for this wallet & criteria to ensure multi-page reports and selections work completely
+      const result = await window.electronAPI.getTransactions({
+        page: 1,
+        pageSize: 10000,
+        search: searchValue,
+        type: effectiveType,
+        status: 'ACTIVE',
+        wallet_type: walletType,
+      })
+      let items = result.data || []
 
-        // Apply date filter
-        if (dateFilter && dateFilter.mode !== 'NONE') {
-          items = filterTransactionsByDate(items, dateFilter)
-        }
-
-        // Apply payment method filter
-        if (dashboardFilter.paymentMethod !== 'ALL') {
-          items = items.filter((t) => t.payment_method === dashboardFilter.paymentMethod)
-        }
-
-        // Apply min amount filter
-        if (dashboardFilter.minAmount.trim() !== '') {
-          const minCents = parseFloat(dashboardFilter.minAmount) * 100
-          items = items.filter((t) => t.amount_cents >= minCents)
-        }
-
-        // Apply max amount filter
-        if (dashboardFilter.maxAmount.trim() !== '') {
-          const maxCents = parseFloat(dashboardFilter.maxAmount) * 100
-          items = items.filter((t) => t.amount_cents <= maxCents)
-        }
-
-        // Apply custom sorting
-        items.sort((a, b) => {
-          const pinA = a.is_pinned ?? 0
-          const pinB = b.is_pinned ?? 0
-          if (pinA !== pinB) return pinB - pinA
-
-          if (dashboardFilter.sortByAmount === 'desc') {
-            return b.amount_cents - a.amount_cents
-          }
-          if (dashboardFilter.sortByAmount === 'asc') {
-            return a.amount_cents - b.amount_cents
-          }
-
-          if (dashboardFilter.sortDateOrder === 'asc') {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        })
-
-        setTotal(items.length)
-        const start = (page - 1) * PAGE_SIZE
-        setData(items.slice(start, start + PAGE_SIZE))
-      } else {
-        const result = await window.electronAPI.getTransactions({
-          page,
-          pageSize: PAGE_SIZE,
-          search: searchValue,
-          type: 'ALL',
-          status: 'ACTIVE',
-          wallet_type: walletType,
-        })
-        setData(sortTransactions(result.data))
-        setTotal(result.total)
+      // Apply date filter
+      if (dateFilter && dateFilter.mode !== 'NONE') {
+        items = filterTransactionsByDate(items, dateFilter)
       }
+
+      // Apply payment method filter (Quick segmented switch or Funnel filter)
+      const effectiveMethod = (paymentMethodFilter && paymentMethodFilter !== 'ALL')
+        ? paymentMethodFilter
+        : dashboardFilter.paymentMethod
+
+      if (effectiveMethod !== 'ALL') {
+        items = items.filter((t) => {
+          if (effectiveMethod === 'بنك') {
+            return t.payment_method === 'بنك' || t.payment_method === 'تحويل مصرفي'
+          }
+          return t.payment_method === effectiveMethod
+        })
+      }
+
+      // Apply min amount filter
+      if (dashboardFilter.minAmount.trim() !== '') {
+        const minCents = parseFloat(dashboardFilter.minAmount) * 100
+        items = items.filter((t) => t.amount_cents >= minCents)
+      }
+
+      // Apply max amount filter
+      if (dashboardFilter.maxAmount.trim() !== '') {
+        const maxCents = parseFloat(dashboardFilter.maxAmount) * 100
+        items = items.filter((t) => t.amount_cents <= maxCents)
+      }
+
+      // Apply custom sorting
+      items.sort((a, b) => {
+        const pinA = a.is_pinned ?? 0
+        const pinB = b.is_pinned ?? 0
+        if (pinA !== pinB) return pinB - pinA
+
+        if (dashboardFilter.sortByAmount === 'desc') {
+          return b.amount_cents - a.amount_cents
+        }
+        if (dashboardFilter.sortByAmount === 'asc') {
+          return a.amount_cents - b.amount_cents
+        }
+
+        if (dashboardFilter.sortDateOrder === 'asc') {
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
+
+      // Cache all loaded transactions for persistent multi-page operations
+      items.forEach((t) => {
+        if (t && typeof t.id === 'number') {
+          transactionCacheRef.current.set(t.id, t)
+        }
+      })
+
+      setAllFilteredTransactions(items)
+      setTotal(items.length)
     } catch (err) {
       console.error('Failed to fetch transactions', err)
     } finally {
       setLoading(false)
     }
-  }, [page, searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet])
+  }, [searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet, paymentMethodFilter])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   useEffect(() => {
     setPage(1)
-  }, [searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet])
+  }, [searchValue, typeFilter, dateFilter, dashboardFilter, activeWallet, paymentMethodFilter])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Synchronize current page slice from allFilteredTransactions
+  useEffect(() => {
+    const calculatedTotalPages = Math.max(1, Math.ceil(allFilteredTransactions.length / PAGE_SIZE))
+    if (page > calculatedTotalPages && allFilteredTransactions.length > 0) {
+      setPage(calculatedTotalPages)
+      return
+    }
+    const start = (page - 1) * PAGE_SIZE
+    setData(allFilteredTransactions.slice(start, start + PAGE_SIZE))
+  }, [page, allFilteredTransactions])
 
   // Click-outside and Escape key listener to dismiss swiped row
   useEffect(() => {
@@ -256,6 +270,15 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
       }
       return sortTransactions(prev.map((t) => (t.id === updatedTx.id ? updatedTx : t)))
     })
+    setAllFilteredTransactions((prev) => {
+      if (updatedTx.wallet_type && activeWallet && updatedTx.wallet_type !== activeWallet) {
+        return prev.filter((t) => t.id !== updatedTx.id)
+      }
+      return sortTransactions(prev.map((t) => (t.id === updatedTx.id ? updatedTx : t)))
+    })
+    if (updatedTx && typeof updatedTx.id === 'number') {
+      transactionCacheRef.current.set(updatedTx.id, updatedTx)
+    }
     onStatsRefresh()
     fetchData()
   }
@@ -265,10 +288,15 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     e?.stopPropagation()
     setSwipedRowId(null)
 
-    const targetTx = data.find((t) => t.id === id)
+    const targetTx = allFilteredTransactions.find((t) => t.id === id) || data.find((t) => t.id === id)
     const isCurrentlyPinned = targetTx?.is_pinned === 1
 
     setData((prev) =>
+      sortTransactions(
+        prev.map((t) => (t.id === id ? { ...t, is_pinned: t.is_pinned === 1 ? 0 : 1 } : t))
+      )
+    )
+    setAllFilteredTransactions((prev) =>
       sortTransactions(
         prev.map((t) => (t.id === id ? { ...t, is_pinned: t.is_pinned === 1 ? 0 : 1 } : t))
       )
@@ -302,7 +330,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     setPendingDeleteId(null)
     setDeletingId(targetId)
 
-    const targetTx = data.find((t) => t.id === targetId)
+    const targetTx = allFilteredTransactions.find((t) => t.id === targetId) || data.find((t) => t.id === targetId)
     if (targetTx) {
       playDeleteSound()
       logUserAction(
@@ -316,6 +344,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
 
     setTimeout(async () => {
       setData((prev) => prev.filter((item) => item.id !== targetId))
+      setAllFilteredTransactions((prev) => prev.filter((item) => item.id !== targetId))
       const newTotal = Math.max(0, total - 1)
       setTotal(newTotal)
       setDeletingId(null)
@@ -339,7 +368,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     setSwipedRowId(null)
     setArchivingId(id)
 
-    const targetTx = data.find((t) => t.id === id)
+    const targetTx = allFilteredTransactions.find((t) => t.id === id) || data.find((t) => t.id === id)
     if (targetTx) {
       playDeleteSound()
       logUserAction(
@@ -353,6 +382,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
 
     setTimeout(async () => {
       setData((prev) => prev.filter((item) => item.id !== id))
+      setAllFilteredTransactions((prev) => prev.filter((item) => item.id !== id))
       const newTotal = Math.max(0, total - 1)
       setTotal(newTotal)
       setArchivingId(null)
@@ -385,6 +415,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     const createPayload: TransactionCreate = {
       ...payload,
       wallet_type: activeWallet || 'LYD',
+      created_at: payload.created_at || getLocalDeviceISOString(),
     }
     if (window.electronAPI?.createTransaction) {
       const newTx = await window.electronAPI.createTransaction(createPayload)
@@ -458,6 +489,11 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
         await window.electronAPI.updateTransactionNotes({ id: editingNotesTx.id, notes: newNotes })
       }
       setData((prev) => prev.map((t) => (t.id === editingNotesTx.id ? { ...t, notes: newNotes } : t)))
+      setAllFilteredTransactions((prev) => prev.map((t) => (t.id === editingNotesTx.id ? { ...t, notes: newNotes } : t)))
+      const cached = transactionCacheRef.current.get(editingNotesTx.id)
+      if (cached) {
+        transactionCacheRef.current.set(editingNotesTx.id, { ...cached, notes: newNotes })
+      }
       logUserAction('EDIT_TRANSACTION', 'مالية', 'تعديل سبب/ملاحظات المعاملة', `جهة: ${editingNotesTx.client_name} | ملاحظة جديدة: ${newNotes}`)
       setEditingNotesTx(null)
     } catch (err) {
@@ -489,6 +525,17 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     }
   }
 
+  const handleSelectAllPages = () => {
+    playClickSound()
+    const allIds = allFilteredTransactions.map((t) => t.id)
+    setSelectedIds(allIds)
+  }
+
+  const handleClearSelection = () => {
+    playClickSound()
+    setSelectedIds([])
+  }
+
   // Available Entities list for TransactionModal dropdown (combining custom Treasury entities + transactions + system entities)
   const availableEntities = useMemo(() => {
     let custom: string[] = []
@@ -503,10 +550,42 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
       custom = []
     }
 
-    const txEntities = data.map((t) => t.client_name?.trim()).filter(Boolean) as string[]
+    const txEntities = allFilteredTransactions.map((t) => t.client_name?.trim()).filter(Boolean) as string[]
     const combined = Array.from(new Set([...custom, ...txEntities])).filter(Boolean)
     return combined.sort((a, b) => a.localeCompare(b, 'ar'))
-  }, [data, modalOpen, activeWallet])
+  }, [allFilteredTransactions, activeWallet])
+
+  // Multi-page comprehensive report transactions list
+  const reportTransactions = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const list: Transaction[] = []
+      const foundIds = new Set<number>()
+
+      // 1. Match from allFilteredTransactions
+      allFilteredTransactions.forEach((tx) => {
+        if (selectedIds.includes(tx.id)) {
+          list.push(tx)
+          foundIds.add(tx.id)
+        }
+      })
+
+      // 2. Fallback to cache for any selected IDs from different filter states
+      selectedIds.forEach((id) => {
+        if (!foundIds.has(id)) {
+          const cached = transactionCacheRef.current.get(id)
+          if (cached) {
+            list.push(cached)
+            foundIds.add(id)
+          }
+        }
+      })
+
+      return list
+    }
+
+    // When NO items are selected: print all transactions matching filters across all pages!
+    return allFilteredTransactions.length > 0 ? allFilteredTransactions : data
+  }, [selectedIds, allFilteredTransactions, data])
 
   const handleBulkArchive = async () => {
     if (selectedIds.length === 0) return
@@ -514,7 +593,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     setSelectedIds([])
 
     idsToArchive.forEach((id) => {
-      const targetTx = data.find((t) => t.id === id)
+      const targetTx = allFilteredTransactions.find((t) => t.id === id) || transactionCacheRef.current.get(id)
       if (targetTx) onArchiveRow?.(targetTx)
     })
 
@@ -537,7 +616,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
     setSelectedIds([])
 
     idsToDelete.forEach((id) => {
-      const targetTx = data.find((t) => t.id === id)
+      const targetTx = allFilteredTransactions.find((t) => t.id === id) || transactionCacheRef.current.get(id)
       if (targetTx) onDeleteRow?.(targetTx)
     })
 
@@ -638,10 +717,14 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
               variant="outline"
               size="sm"
               onClick={() => setReportModalOpen(true)}
-              className="h-8 gap-1.5 text-xs text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 font-arabic font-medium shadow-xs"
+              className="h-8 gap-1.5 text-xs text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 font-arabic font-medium shadow-xs cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-              <span>{selectedIds.length > 0 ? `طباعة المحدد (${selectedIds.length})` : 'طباعة تقرير'}</span>
+              <span>
+                {selectedIds.length > 0
+                  ? `طباعة المحدد (${selectedIds.length})`
+                  : 'طباعة تقرير'}
+              </span>
             </Button>
 
             <Button
@@ -649,17 +732,11 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
               variant="outline"
               size="sm"
               onClick={() => {
-                logUserAction('EXPORT_CSV', 'تقارير وطباعة', 'تصدير معاملات CSV من جدول المعاملات', `عدد السجلات: ${total}`)
-                // Export all currently loaded data
-                if (window.electronAPI?.getTransactions) {
-                  window.electronAPI.getTransactions({ page: 1, pageSize: 10000, status: 'ACTIVE', search: searchValue, type: typeFilter === 'ALL' ? 'ALL' : typeFilter, wallet_type: activeWallet || 'LYD' })
-                    .then((res) => exportTransactionsToCsv(res.data || []))
-                    .catch(() => exportTransactionsToCsv(data))
-                } else {
-                  exportTransactionsToCsv(data)
-                }
+                const itemsToExport = selectedIds.length > 0 ? reportTransactions : allFilteredTransactions
+                logUserAction('EXPORT_CSV', 'تقارير وطباعة', 'تصدير معاملات CSV من جدول المعاملات', `عدد السجلات: ${itemsToExport.length}`)
+                exportTransactionsToCsv(itemsToExport)
               }}
-              className="h-8 gap-1.5 text-xs text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/20 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 font-arabic font-medium shadow-xs"
+              className="h-8 gap-1.5 text-xs text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/20 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 font-arabic font-medium shadow-xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>تصدير CSV</span>
@@ -671,7 +748,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                   id="add-deposit-btn"
                   size="sm"
                   onClick={openDeposit}
-                  className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-arabic font-semibold shadow-sm"
+                  className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-arabic font-semibold shadow-sm cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>إيداع جديد</span>
@@ -681,7 +758,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                   id="add-withdrawal-btn"
                   size="sm"
                   onClick={openWithdrawal}
-                  className="h-8 gap-1.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-arabic font-semibold shadow-sm"
+                  className="h-8 gap-1.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-arabic font-semibold shadow-sm cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>سحب جديد</span>
@@ -693,22 +770,42 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
 
         {/* Floating Bulk Action Bar */}
         {selectedIds.length > 0 && (
-          <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border border-zinc-800 dark:border-zinc-200 shadow-lg animate-in fade-in slide-in-from-top-2 duration-200 font-arabic">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border border-zinc-800 dark:border-zinc-200 shadow-lg animate-in fade-in slide-in-from-top-2 duration-200 font-arabic">
             <div className="flex items-center gap-2 text-xs font-bold">
               <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 dark:text-emerald-700 border border-emerald-500/40 ar-num">
-                تم تحديد {selectedIds.length} عنصر
+                تم تحديد {selectedIds.length} من أصل {total} معاملة
               </span>
-              <span className="text-zinc-400 dark:text-zinc-600 font-medium hidden sm:inline">
-                يمكنك تنفيذ إجراء جماعي على المعاملات المحددة
-              </span>
+              {selectedIds.length < total ? (
+                <button
+                  type="button"
+                  onClick={handleSelectAllPages}
+                  className="text-xs text-emerald-400 dark:text-emerald-700 underline font-semibold hover:text-emerald-300 dark:hover:text-emerald-800 cursor-pointer"
+                >
+                  تحديد كافة المعاملات ({total}) عبر جميع الصفحات
+                </button>
+              ) : (
+                <span className="text-zinc-400 dark:text-zinc-600 font-medium">
+                  (تم تحديد الكل عبر كافة الصفحات)
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 type="button"
+                onClick={() => setReportModalOpen(true)}
+                className="h-7 px-3 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-all cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>طباعة المحدد ({selectedIds.length})</span>
+              </Button>
+
+              <Button
+                size="sm"
+                type="button"
                 onClick={handleBulkArchive}
-                className="h-7 px-3 gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 dark:bg-zinc-200 dark:hover:bg-zinc-300 text-zinc-100 dark:text-zinc-900 font-bold rounded-lg transition-all"
+                className="h-7 px-3 gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 dark:bg-zinc-200 dark:hover:bg-zinc-300 text-zinc-100 dark:text-zinc-900 font-bold rounded-lg transition-all cursor-pointer"
               >
                 <Archive className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
                 <span>أرشفة المحدد</span>
@@ -719,12 +816,22 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                   size="sm"
                   type="button"
                   onClick={handleBulkDelete}
-                  className="h-7 px-3 gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-all"
+                  className="h-7 px-3 gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-all cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>حذف المحدد</span>
                 </Button>
               )}
+
+              <Button
+                size="sm"
+                variant="ghost"
+                type="button"
+                onClick={handleClearSelection}
+                className="h-7 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 dark:text-zinc-600 dark:hover:text-zinc-800 cursor-pointer"
+              >
+                إلغاء التحديد
+              </Button>
             </div>
           </div>
         )}
@@ -732,6 +839,33 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
         {/* Table Container */}
         <Card className="subtle-card rounded-xl p-0 shadow-none border border-zinc-200/80 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-900/90 transition-colors">
           <CardContent className="p-0">
+            {isSelectionMode && data.length > 0 && data.every((t) => selectedIds.includes(t.id)) && total > data.length && (
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-800/50 px-4 py-2 text-center text-xs font-arabic text-emerald-800 dark:text-emerald-300 flex items-center justify-center gap-2">
+                {selectedIds.length >= total ? (
+                  <>
+                    <span>تم تحديد جميع المعاملات ({total}) في كافة الصفحات ({totalPages} صفحات).</span>
+                    <button
+                      type="button"
+                      onClick={handleClearSelection}
+                      className="font-bold underline text-emerald-900 dark:text-emerald-200 hover:text-emerald-700 cursor-pointer"
+                    >
+                      إلغاء تحديد الكل
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span>تم تحديد جميع المعاملات في هذه الصفحة ({data.length}).</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllPages}
+                      className="font-bold underline text-emerald-900 dark:text-emerald-200 hover:text-emerald-700 cursor-pointer"
+                    >
+                      تحديد جميع المعاملات ({total}) في كافة الصفحات ({totalPages} صفحات)
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <Table dir="rtl" className="w-full border-collapse">
                 <TableHeader>
@@ -740,7 +874,17 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
                       <TableHead className="w-8 text-center p-0 flex items-center justify-center shrink-0 ml-2">
                         <input
                           type="checkbox"
-                          checked={data.length > 0 && data.every((t) => selectedIds.includes(t.id))}
+                          checked={
+                            (data.length > 0 && data.every((t) => selectedIds.includes(t.id))) ||
+                            (allFilteredTransactions.length > 0 && selectedIds.length === allFilteredTransactions.length)
+                          }
+                          ref={(el) => {
+                            if (el) {
+                              const hasSomeVisible = data.some((t) => selectedIds.includes(t.id))
+                              const hasAllVisible = data.length > 0 && data.every((t) => selectedIds.includes(t.id))
+                              el.indeterminate = hasSomeVisible && !hasAllVisible
+                            }
+                          }}
                           onChange={handleToggleSelectAll}
                           className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                           title="تحديد الكل"
@@ -1168,7 +1312,7 @@ export function TransactionsTable({ searchValue, onStatsRefresh, dateFilter, onA
       <TransactionsReportModal
         open={reportModalOpen}
         onClose={() => setReportModalOpen(false)}
-        transactions={selectedIds.length > 0 ? data.filter((t) => selectedIds.includes(t.id)) : data}
+        transactions={reportTransactions}
         stats={null}
         dateFilter={dateFilter}
       />

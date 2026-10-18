@@ -1,4 +1,4 @@
-export type PaymentMethod = 'نقداً' | 'تحويل مصرفي' | 'بطاقة'
+export type PaymentMethod = 'نقداً' | 'بنك' | 'تحويل مصرفي' | 'بطاقة'
 export type TransactionSubtype = 'REGULAR' | 'PERSON'
 
 export interface Transaction {
@@ -30,6 +30,7 @@ export interface TransactionCreate {
   notes?: string
   status?: 'COMPLETED' | 'PENDING' | 'FAILED' | 'PROCESSING'
   wallet_type?: 'LYD' | 'USD'
+  created_at?: string
 }
 
 export interface TransactionUpdate {

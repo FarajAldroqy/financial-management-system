@@ -19,7 +19,7 @@ import { filterTransactionsByDate } from '@/lib/utils'
 import { initAutoBackupListener } from '@/lib/backupManager'
 import { initMockElectronAPI } from '@/lib/mockApi'
 import { Users, Settings, Database, FileText, Sparkles,
-  HelpCircle, Search, LayoutDashboard,
+  HelpCircle, Search, LayoutDashboard, Banknote, Building2, Coins,
 } from 'lucide-react'
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard'
 import { WalletProvider, useWallet } from '@/context/WalletContext'
@@ -89,6 +89,7 @@ function AppShell() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [dateFilter, setDateFilter] = useState<DateFilter>({ mode: 'NONE' })
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | 'نقداً' | 'بنك'>('ALL')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
   // Archive Drawer & Rows State (Wallet scoped)
@@ -173,6 +174,7 @@ function AppShell() {
     setStats(DEFAULT_STATS)
     setActiveSection('dashboard')
     setDateFilter({ mode: 'NONE' })
+    setPaymentMethodFilter('ALL')
     setSearch('')
   }, [])
 
@@ -213,9 +215,18 @@ function AppShell() {
       if (trashResult?.data) setDeletedDashboardRows(trashResult.data)
 
       const activeTxs = activeResult?.data || []
-      const filtered = (dateFilter && dateFilter.mode !== 'NONE')
+      let filtered = (dateFilter && dateFilter.mode !== 'NONE')
         ? filterTransactionsByDate(activeTxs, dateFilter)
         : activeTxs
+
+      if (paymentMethodFilter !== 'ALL') {
+        filtered = filtered.filter((t) => {
+          if (paymentMethodFilter === 'بنك') {
+            return t.payment_method === 'بنك' || t.payment_method === 'تحويل مصرفي'
+          }
+          return t.payment_method === paymentMethodFilter
+        })
+      }
 
       let dep = 0
       let withd = 0
@@ -245,7 +256,7 @@ function AppShell() {
       })
 
       const baseStats = s || DEFAULT_STATS
-      const finalStats: Stats = (dateFilter && dateFilter.mode !== 'NONE')
+      const finalStats: Stats = ((dateFilter && dateFilter.mode !== 'NONE') || paymentMethodFilter !== 'ALL')
         ? {
             total_balance_cents: dep - withd,
             total_deposits_cents: dep,
@@ -273,7 +284,7 @@ function AppShell() {
     } finally {
       setStatsLoading(false)
     }
-  }, [dateFilter, activeWallet])
+  }, [dateFilter, activeWallet, paymentMethodFilter])
 
   useEffect(() => {
     fetchStats()
@@ -435,8 +446,71 @@ function AppShell() {
       case 'lifecycle':
         return (
           <div className="flex flex-col gap-5 p-6 bg-white dark:bg-zinc-950 min-h-full transition-colors duration-300">
+            {/* Quick Payment Method Filter Switch (فوق البطاقات) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-1" dir="rtl">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800/90 rounded-2xl shadow-xs">
+                  <button
+                    type="button"
+                    id="payment-filter-all"
+                    onClick={() => setPaymentMethodFilter('ALL')}
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-arabic font-bold transition-all duration-200 cursor-pointer ${
+                      paymentMethodFilter === 'ALL'
+                        ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/80 dark:border-zinc-700/80'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>الكل</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="payment-filter-cash"
+                    onClick={() => setPaymentMethodFilter('نقداً')}
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-arabic font-bold transition-all duration-200 cursor-pointer ${
+                      paymentMethodFilter === 'نقداً'
+                        ? 'bg-emerald-600 text-white shadow-xs border border-emerald-500'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <Banknote className="w-3.5 h-3.5" />
+                    <span>نقداً</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="payment-filter-bank"
+                    onClick={() => setPaymentMethodFilter('بنك')}
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-arabic font-bold transition-all duration-200 cursor-pointer ${
+                      paymentMethodFilter === 'بنك'
+                        ? 'bg-sky-600 text-white shadow-xs border border-sky-500'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>بنك</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Filter Indicator Hint */}
+              <div className="flex items-center gap-2 text-xs font-arabic text-zinc-500 dark:text-zinc-400">
+                <span className={`inline-block w-2 h-2 rounded-full ${
+                  paymentMethodFilter === 'نقداً' ? 'bg-emerald-500' : paymentMethodFilter === 'بنك' ? 'bg-sky-500' : 'bg-emerald-500'
+                }`} />
+                <span>
+                  {paymentMethodFilter === 'ALL'
+                    ? 'عرض كافة المعاملات (النقدية والبنكية)'
+                    : paymentMethodFilter === 'نقداً'
+                    ? 'عرض المعاملات النقدية فقط'
+                    : 'عرض المعاملات البنكية فقط'}
+                </span>
+              </div>
+            </div>
+
             {/* Top Metric Cards (Row 1) */}
-            <MetricCards stats={stats} loading={statsLoading} />
+            <MetricCards stats={stats} loading={statsLoading} paymentMethodFilter={paymentMethodFilter} />
 
             {/* Total Visitors / Overview Wave Chart (Row 2) */}
             <OverviewChart />
@@ -446,6 +520,7 @@ function AppShell() {
               searchValue={search}
               onStatsRefresh={fetchStats}
               dateFilter={dateFilter}
+              paymentMethodFilter={paymentMethodFilter}
               onArchiveRow={(tx) => {
                 setArchivedDashboardRows((prev) => [...prev.filter((r) => r.id !== tx.id), tx])
               }}

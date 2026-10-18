@@ -17,9 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowDownCircle, ArrowUpCircle, Loader2, User, Users, Plus, Trash2 } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Loader2, User, Users, Plus, Trash2, Clock } from 'lucide-react'
 import type { TransactionCreate, PaymentMethod, TransactionSubtype } from '@/types'
-import { cleanAndNormalizeAmount } from '@/lib/utils'
+import { cleanAndNormalizeAmount, getLocalDeviceISOString } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
 import { useWallet } from '@/context/WalletContext'
 
@@ -133,6 +133,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
+        created_at: getLocalDeviceISOString(),
       }
     } else if (isDeposit) {
       // Deposit from Person
@@ -152,6 +153,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
+        created_at: getLocalDeviceISOString(),
       }
     } else {
       // Withdrawal for Persons
@@ -171,6 +173,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
+        created_at: getLocalDeviceISOString(),
       }
     }
 
@@ -209,8 +212,12 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
               {isDeposit ? <ArrowDownCircle className="w-5 h-5" /> : <ArrowUpCircle className="w-5 h-5" />}
             </div>
             <div>
-              <DialogTitle className="text-base font-bold font-arabic text-zinc-900 dark:text-zinc-100">
-                {isDeposit ? 'تسجيل إيداع جديد' : 'تسجيل سحب جديد'}
+              <DialogTitle className="text-base font-bold font-arabic text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
+                <span>{isDeposit ? 'تسجيل إيداع جديد' : 'تسجيل سحب جديد'}</span>
+                <span className="flex items-center gap-1 text-[11px] font-normal text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+                  <Clock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  <span>توقيت الجهاز</span>
+                </span>
               </DialogTitle>
               <DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400 font-arabic">
                 {isDeposit
@@ -510,7 +517,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
               </SelectTrigger>
               <SelectContent className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700" dir="rtl">
                 <SelectItem value="نقداً" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">نقداً (Cash)</SelectItem>
-                <SelectItem value="تحويل مصرفي" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">تحويل مصرفي (Bank Transfer)</SelectItem>
+                <SelectItem value="بنك" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بنك (Bank)</SelectItem>
                 <SelectItem value="بطاقة" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بطاقة (Card)</SelectItem>
               </SelectContent>
             </Select>

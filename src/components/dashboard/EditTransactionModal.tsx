@@ -106,7 +106,7 @@ export function EditTransactionModal({
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
       }))
-      setPaymentMethod(transaction.payment_method || 'نقداً')
+      setPaymentMethod(transaction.payment_method === 'تحويل مصرفي' ? 'بنك' : (transaction.payment_method || 'نقداً'))
       const formattedDate = formatForDateTimeLocal(transaction.created_at)
       setDateTimeLocal(formattedDate)
       initialDateTimeRef.current = formattedDate
@@ -518,8 +518,8 @@ export function EditTransactionModal({
                   <SelectItem value="نقداً" className="font-arabic text-xs">
                     نقداً (كاش)
                   </SelectItem>
-                  <SelectItem value="تحويل مصرفي" className="font-arabic text-xs">
-                    تحويل مصرفي
+                  <SelectItem value="بنك" className="font-arabic text-xs">
+                    بنك
                   </SelectItem>
                   <SelectItem value="صك" className="font-arabic text-xs">
                     صك مصدق / شيك

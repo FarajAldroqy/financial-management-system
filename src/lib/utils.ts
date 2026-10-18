@@ -58,6 +58,18 @@ export function cleanAndNormalizeAmount(rawVal: string, prevVal: string = ''): s
   return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned
 }
 
+/** Get current device date-time formatted as local ISO string 'YYYY-MM-DDTHH:mm:ss' matching user's exact device time */
+export function getLocalDeviceISOString(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const seconds = pad(date.getSeconds())
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+}
+
 /** Safely parses a date string across ISO, SQLite 'YYYY-MM-DD HH:MM:SS', and custom formats */
 export function parseDateSafe(dateInput: string | Date | undefined | null): Date {
   if (!dateInput) return new Date()

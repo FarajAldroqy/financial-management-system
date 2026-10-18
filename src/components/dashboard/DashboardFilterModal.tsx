@@ -18,7 +18,7 @@ import { useWallet } from '@/context/WalletContext'
 
 export interface DashboardFilterState {
   type: 'ALL' | 'DEPOSIT' | 'WITHDRAWAL'
-  paymentMethod: 'ALL' | 'نقداً' | 'تحويل مصرفي' | 'صك'
+  paymentMethod: 'ALL' | 'نقداً' | 'بنك' | 'تحويل مصرفي' | 'صك'
   minAmount: string
   maxAmount: string
   sortDateOrder: 'desc' | 'asc' // 'desc' = مؤخراً (newest first), 'asc' = مقدماً (oldest first)
@@ -154,8 +154,8 @@ export function DashboardFilterModal({
               {[
                 { id: 'ALL', label: 'الكل' },
                 { id: 'نقداً', label: 'نقداً (Cash)' },
-                { id: 'تحويل مصرفي', label: 'تحويل مصرفي' },
-                { id: 'صك', label: 'صك مصرفي' },
+                { id: 'بنك', label: 'بنك' },
+                { id: 'صك', label: 'صك مصدق' },
               ].map((method) => (
                 <button
                   key={method.id}

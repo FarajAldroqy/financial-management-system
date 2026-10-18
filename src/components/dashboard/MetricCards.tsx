@@ -6,6 +6,7 @@ import type { Stats } from '@/types'
 interface MetricCardsProps {
   stats: Stats | null
   loading: boolean
+  paymentMethodFilter?: 'ALL' | 'نقداً' | 'بنك'
 }
 
 function SkeletonCard() {
@@ -34,7 +35,7 @@ const DEFAULT_STATS: Stats = {
   bank_withdrawal_count: 0,
 }
 
-export function MetricCards({ stats, loading }: MetricCardsProps) {
+export function MetricCards({ stats, loading, paymentMethodFilter = 'ALL' }: MetricCardsProps) {
   if (loading && !stats) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -51,6 +52,13 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
   const cashWithdrawals = currentStats.cash_withdrawal_count ?? Math.max(0, currentStats.withdrawal_count)
   const bankWithdrawals = currentStats.bank_withdrawal_count ?? 0
 
+  const filterSubtitleSuffix =
+    paymentMethodFilter === 'نقداً'
+      ? ' (نقداً فقط)'
+      : paymentMethodFilter === 'بنك'
+      ? ' (بنك فقط)'
+      : ''
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 font-arabic" dir="rtl">
       {/* CARD 1: TOTAL WITHDRAWALS (مجموع السحوبات) */}
@@ -61,7 +69,7 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
         <CardContent className="p-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-              مجموع السحوبات
+              مجموع السحوبات {filterSubtitleSuffix}
             </span>
             <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/80 flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:scale-105 transition-transform">
               <ArrowDownLeft className="w-5 h-5" />
@@ -73,7 +81,13 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-            <span>إجمالي المبالغ المسحوبة بالكامل</span>
+            <span>
+              {paymentMethodFilter === 'نقداً'
+                ? 'إجمالي المبالغ المسحوبة نقداً'
+                : paymentMethodFilter === 'بنك'
+                ? 'إجمالي المبالغ المسحوبة عبر البنك'
+                : 'إجمالي المبالغ المسحوبة بالكامل'}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -86,7 +100,7 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
         <CardContent className="p-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              مجموع الإيداعات
+              مجموع الإيداعات {filterSubtitleSuffix}
             </span>
             <div className="w-9 h-9 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/80 flex items-center justify-center text-cyan-600 dark:text-cyan-400 group-hover:scale-105 transition-transform">
               <ArrowUpRight className="w-5 h-5" />
@@ -98,7 +112,13 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span>إجمالي المقبوضات والمودعات بالكامل</span>
+            <span>
+              {paymentMethodFilter === 'نقداً'
+                ? 'إجمالي الإيداعات النقدية المقبوضة'
+                : paymentMethodFilter === 'بنك'
+                ? 'إجمالي الإيداعات والتحويلات البنكية'
+                : 'إجمالي المقبوضات والمودعات بالكامل'}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -111,7 +131,7 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
         <CardContent className="p-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-              عدد الإيداعات
+              عدد الإيداعات {filterSubtitleSuffix}
             </span>
             <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800/80 flex items-center justify-center text-sky-600 dark:text-sky-400 group-hover:scale-105 transition-transform">
               <Wallet className="w-5 h-5" />
@@ -124,12 +144,24 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
 
           {/* Dual breakdown badges */}
           <div className="flex items-center gap-2 pt-0.5 text-xs font-bold">
-            <span className="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60 ar-num">
-              نقداً: {cashDeposits}
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 ar-num">
-              مصرفي: {bankDeposits}
-            </span>
+            {(paymentMethodFilter === 'ALL' || paymentMethodFilter === 'نقداً') && (
+              <span className={`px-2.5 py-1 rounded-lg border ar-num ${
+                paymentMethodFilter === 'نقداً'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 font-extrabold'
+                  : 'bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/60'
+              }`}>
+                نقداً: {cashDeposits}
+              </span>
+            )}
+            {(paymentMethodFilter === 'ALL' || paymentMethodFilter === 'بنك') && (
+              <span className={`px-2.5 py-1 rounded-lg border ar-num ${
+                paymentMethodFilter === 'بنك'
+                  ? 'bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-700 font-extrabold'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+              }`}>
+                بنك: {bankDeposits}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -142,7 +174,7 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
         <CardContent className="p-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-              عدد السحوبات
+              عدد السحوبات {filterSubtitleSuffix}
             </span>
             <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-105 transition-transform">
               <CreditCard className="w-5 h-5" />
@@ -155,12 +187,24 @@ export function MetricCards({ stats, loading }: MetricCardsProps) {
 
           {/* Dual breakdown badges */}
           <div className="flex items-center gap-2 pt-0.5 text-xs font-bold">
-            <span className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 ar-num">
-              نقداً: {cashWithdrawals}
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 ar-num">
-              مصرفي: {bankWithdrawals}
-            </span>
+            {(paymentMethodFilter === 'ALL' || paymentMethodFilter === 'نقداً') && (
+              <span className={`px-2.5 py-1 rounded-lg border ar-num ${
+                paymentMethodFilter === 'نقداً'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 font-extrabold'
+                  : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200/80 dark:border-amber-800/60'
+              }`}>
+                نقداً: {cashWithdrawals}
+              </span>
+            )}
+            {(paymentMethodFilter === 'ALL' || paymentMethodFilter === 'بنك') && (
+              <span className={`px-2.5 py-1 rounded-lg border ar-num ${
+                paymentMethodFilter === 'بنك'
+                  ? 'bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-700 font-extrabold'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+              }`}>
+                بنك: {bankWithdrawals}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
