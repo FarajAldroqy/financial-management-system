@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Printer, X, CheckSquare, Square, FileText, SlidersHorizontal,
 } from 'lucide-react'
@@ -78,107 +77,182 @@ export function TransactionsReportModal({
     }
     logUserAction('PRINT_REPORT', 'تقارير وطباعة', 'طباعة تقرير المعاملات الشامل', `معاملات مدرجة بالتقرير: ${transactions.length}`)
 
-    const printElement = document.getElementById('printable-custom-report')
-    if (!printElement) {
-      window.print()
-      return
-    }
-
-    // Create a temporary hidden iframe for 100% clean, unclipped printing & PDF saving
-    const iframe = document.createElement('iframe')
-    iframe.id = 'report-print-frame'
-    iframe.style.position = 'fixed'
-    iframe.style.top = '-9999px'
-    iframe.style.left = '-9999px'
-    iframe.style.width = '210mm'
-    iframe.style.height = '297mm'
-    iframe.style.border = 'none'
-    iframe.style.visibility = 'hidden'
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentWindow?.document
-    if (!doc) {
-      window.print()
-      return
-    }
-
-    // Collect all stylesheets from current document
-    let styles = ''
-    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
-      styles += node.outerHTML
-    })
-
-    doc.open()
-    doc.write(`
-      <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
-        <head>
-          <meta charset="utf-8">
-          <title>تقرير المعاملات والحركات المالية</title>
-          ${styles}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 8mm;
-            }
-            html, body {
-              background: #ffffff !important;
-              color: #09090b !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              font-family: 'IBM Plex Arabic', 'Tajawal', system-ui, sans-serif !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            * {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-              box-sizing: border-box !important;
-            }
-            .ar-num {
-              font-family: 'IBM Plex Arabic', 'Tajawal', sans-serif !important;
-              direction: ltr !important;
-              unicode-bidi: embed !important;
-            }
-            table {
-              page-break-inside: auto !important;
-              border-collapse: collapse !important;
-              width: 100% !important;
-            }
-            tr {
-              page-break-inside: avoid !important;
-              page-break-after: auto !important;
-            }
-            thead {
-              display: table-header-group !important;
-            }
-            tfoot {
-              display: table-footer-group !important;
-            }
-          </style>
-        </head>
-        <body class="bg-white text-zinc-950 p-4">
-          ${printElement.innerHTML}
-        </body>
-      </html>
-    `)
-    doc.close()
-
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
-      } catch (err) {
-        console.error('Iframe print error, falling back to window.print():', err)
-        window.print()
-      } finally {
-        setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe)
-          }
-        }, 3000)
+    // ── Build KPI cards HTML string ──────────────────────────────────────────
+    let cardsHtml = ''
+    if (cards.withdrawalsSum || cards.depositsSum || cards.depositsCount || cards.withdrawalsCount) {
+      cardsHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">'
+      if (cards.withdrawalsSum) {
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #fecaca;background:#fff1f2;">
+          <span style="font-size:11px;font-weight:700;color:#991b1b;display:block;">مجموع السحوبات</span>
+          <span style="font-size:20px;font-weight:900;color:#b91c1c;display:block;margin-top:4px;">${formatCurrency(totalWithd)}</span>
+        </div>`
       }
-    }, 400)
+      if (cards.depositsSum) {
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #a7f3d0;background:#ecfdf5;">
+          <span style="font-size:11px;font-weight:700;color:#065f46;display:block;">مجموع الإيداعات</span>
+          <span style="font-size:20px;font-weight:900;color:#047857;display:block;margin-top:4px;">${formatCurrency(totalDep)}</span>
+        </div>`
+      }
+      if (cards.depositsCount) {
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #bae6fd;background:#f0f9ff;">
+          <span style="font-size:11px;font-weight:700;color:#075985;display:block;">عدد الإيداعات</span>
+          <span style="font-size:18px;font-weight:900;color:#0c4a6e;display:block;margin-top:4px;">${depCount} معاملة <span style="font-size:11px;color:#0369a1;font-weight:700;">(نقداً: ${cashDep} | بنك: ${bankDep})</span></span>
+        </div>`
+      }
+      if (cards.withdrawalsCount) {
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #fde68a;background:#fffbeb;">
+          <span style="font-size:11px;font-weight:700;color:#92400e;display:block;">عدد السحوبات</span>
+          <span style="font-size:18px;font-weight:900;color:#78350f;display:block;margin-top:4px;">${withdCount} معاملة <span style="font-size:11px;color:#b45309;font-weight:700;">(نقداً: ${cashWithd} | بنك: ${bankWithd})</span></span>
+        </div>`
+      }
+      cardsHtml += '</div>'
+    }
+
+    // ── Build table header columns ───────────────────────────────────────────
+    let theadCols = ''
+    if (columns.clientName) theadCols += '<th style="padding:10px;border-left:1px solid #d4d4d8;text-align:right;">اسم الجهة / المستفيد</th>'
+    if (columns.type)       theadCols += '<th style="padding:10px;border-left:1px solid #d4d4d8;text-align:center;">نوع المعاملة</th>'
+    if (columns.paymentMethod) theadCols += '<th style="padding:10px;border-left:1px solid #d4d4d8;text-align:center;">أسلوب الدفع</th>'
+    if (columns.amount)     theadCols += '<th style="padding:10px;border-left:1px solid #d4d4d8;text-align:left;">القيمة المالية</th>'
+    if (columns.date)       theadCols += '<th style="padding:10px;border-left:1px solid #d4d4d8;text-align:center;">التاريخ والوقت</th>'
+    if (columns.notes)      theadCols += '<th style="padding:10px;text-align:right;">الملاحظات والبيان</th>'
+
+    // ── Build table rows ─────────────────────────────────────────────────────
+    let tbodyRows = ''
+    if (transactions.length === 0) {
+      tbodyRows = `<tr><td colspan="6" style="padding:32px;text-align:center;font-size:12px;color:#71717a;">لا توجد معاملات مسجلة في هذا التقرير</td></tr>`
+    } else {
+      transactions.forEach((tx) => {
+        const isDeposit = tx.type === 'DEPOSIT'
+        const typeColor = isDeposit ? '#047857' : '#b91c1c'
+        const amtColor  = isDeposit ? '#047857' : '#b91c1c'
+        const amtSign   = isDeposit ? '+' : '-'
+        let row = '<tr style="border-bottom:1px solid #e4e4e7;">'
+        if (columns.clientName)    row += `<td style="padding:10px;font-weight:700;border-left:1px solid #e4e4e7;text-align:right;">${tx.client_name ?? ''}</td>`
+        if (columns.type)          row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;"><span style="font-weight:900;color:${typeColor};">${isDeposit ? 'إيداع (قبض)' : 'سحب (صرف)'}</span></td>`
+        if (columns.paymentMethod) row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;font-weight:600;">${tx.payment_method || 'نقداً'}</td>`
+        if (columns.amount)        row += `<td style="padding:10px;text-align:left;border-left:1px solid #e4e4e7;font-weight:900;"><span style="color:${amtColor};">${amtSign}${formatCurrency(tx.amount_cents)}</span></td>`
+        if (columns.date)          row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;font-weight:500;direction:ltr;">${formatDate(tx.created_at)}</td>`
+        if (columns.notes)         row += `<td style="padding:10px;text-align:right;color:#52525b;font-weight:500;">${tx.notes || '-'}</td>`
+        row += '</tr>'
+        tbodyRows += row
+      })
+    }
+
+    // ── Resolve logo to base64 so it works inside the iframe ─────────────────
+    const resolveLogoBase64 = (): Promise<string> => {
+      return new Promise((resolve) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = img.naturalWidth
+          canvas.height = img.naturalHeight
+          canvas.getContext('2d')!.drawImage(img, 0, 0)
+          resolve(canvas.toDataURL('image/png'))
+        }
+        img.onerror = () => resolve('')
+        img.src = logoImg
+      })
+    }
+
+    resolveLogoBase64().then((logoBase64) => {
+      const logoTag = logoBase64
+        ? `<img src="${logoBase64}" alt="شعار" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+        : ''
+
+      // ── Assemble full HTML document ────────────────────────────────────────
+      const htmlContent = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <title>تقرير المعاملات والحركات المالية</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Arabic:wght@400;500;700;800;900&display=swap');
+    @page { size: A4 portrait; margin: 12mm; }
+    *, *::before, *::after { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body {
+      margin: 0; padding: 0;
+      background: #ffffff;
+      color: #09090b;
+      font-family: 'IBM Plex Arabic', 'Tajawal', 'Arial', system-ui, sans-serif;
+      font-size: 13px;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+  </style>
+</head>
+<body style="padding:16px;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:2px solid #18181b;margin-bottom:24px;gap:16px;">
+    <div style="width:96px;height:96px;border-radius:50%;overflow:hidden;border:2px solid #18181b;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+      ${logoTag}
+    </div>
+    <div style="text-align:center;flex:1;">
+      <h1 style="font-size:22px;font-weight:900;margin:0 0 4px;color:#09090b;">منظومة إدارة مالية</h1>
+      <p style="font-size:13px;font-weight:800;color:#3f3f46;margin:0 0 2px;">تقرير المعاملات والحركات المالية المخصصة</p>
+      <p style="font-size:11px;font-weight:700;color:#71717a;margin:0;">${filterText} • إجمالي المعاملات المدرجة بالتقرير: ${transactions.length}</p>
+    </div>
+    <div style="width:96px;flex-shrink:0;"></div>
+  </div>
+
+  <!-- KPI Cards -->
+  ${cardsHtml}
+
+  <!-- Data Table -->
+  <table style="border:2px solid #18181b;margin-bottom:24px;">
+    <thead>
+      <tr style="background:#f4f4f5;color:#09090b;font-weight:900;border-bottom:2px solid #18181b;">
+        ${theadCols}
+      </tr>
+    </thead>
+    <tbody>
+      ${tbodyRows}
+    </tbody>
+  </table>
+
+  <!-- Footer -->
+  <div style="padding-top:20px;border-top:2px solid #18181b;display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#3f3f46;">
+    <div>توقيع موظف المنظومة: ................................</div>
+    <div>اعتماد الإدارة المالية: ................................</div>
+  </div>
+
+</body>
+</html>`
+
+      // ── Write to a real visible (off-screen) iframe and print ──────────────
+      const oldFrame = document.getElementById('report-print-frame')
+      if (oldFrame) oldFrame.remove()
+
+      const iframe = document.createElement('iframe')
+      iframe.id = 'report-print-frame'
+      // Position off-screen but NOT hidden — Electron needs to render it
+      iframe.style.cssText = 'position:fixed;top:0;left:-9999px;width:210mm;height:297mm;border:none;background:#fff;'
+      document.body.appendChild(iframe)
+
+      const doc = iframe.contentDocument || iframe.contentWindow?.document
+      if (!doc) { window.print(); return }
+
+      doc.open()
+      doc.write(htmlContent)
+      doc.close()
+
+      // Give Chromium time to layout & paint before printing
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus()
+          iframe.contentWindow?.print()
+        } catch (err) {
+          console.error('Iframe print error:', err)
+          window.print()
+        } finally {
+          setTimeout(() => { iframe.remove() }, 4000)
+        }
+      }, 600)
+    })
   }
 
   // Calculate live statistics for the report view
@@ -211,180 +285,6 @@ export function TransactionsReportModal({
 
   return (
     <>
-      {/* -------------------- PRINT MEDIA DOM CONTAINER (Portaled into document.body outside #root) -------------------- */}
-      {typeof document !== 'undefined' && createPortal(
-        <div id="printable-custom-report" className="hidden print:block font-arabic select-none bg-white text-zinc-950 p-6 w-full box-border" dir="rtl">
-        <style>{`
-          @media print {
-            * {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            html, body {
-              background: white !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            body * {
-              visibility: hidden !important;
-            }
-            #printable-custom-report, #printable-custom-report * {
-              visibility: visible !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #printable-custom-report {
-              position: static !important;
-              display: block !important;
-              width: 100% !important;
-              max-width: 100% !important;
-              background: white !important;
-              color: black !important;
-              padding: 6mm !important;
-              margin: 0 auto !important;
-              box-sizing: border-box !important;
-            }
-            table {
-              page-break-inside: auto;
-            }
-            tr {
-              page-break-inside: avoid;
-              page-break-after: auto;
-            }
-            thead {
-              display: table-header-group;
-            }
-            tfoot {
-              display: table-footer-group;
-            }
-            @page {
-              size: A4 portrait;
-              margin: 8mm;
-            }
-          }
-        `}</style>
-
-        {/* Printable Document Header */}
-        <div className="flex items-center justify-between pb-4 border-b-2 border-zinc-900 mb-6 gap-4" dir="rtl">
-          <div className="flex items-center justify-start shrink-0">
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-zinc-900 bg-white p-0.5 flex items-center justify-center shadow-xs">
-              <img src={logoImg} alt="شعار منظومة إدارة مالية" className="w-full h-full object-cover rounded-full" />
-            </div>
-          </div>
-          <div className="text-center flex-1 space-y-1">
-            <h1 className="font-black text-2xl text-zinc-950 tracking-tight leading-tight">منظومة إدارة مالية</h1>
-            <p className="text-sm font-extrabold text-zinc-700">تقرير المعاملات والحركات المالية المخصصة</p>
-            <p className="text-xs text-zinc-500 font-bold ar-num">{filterText} • إجمالي المعاملات المدرجة بالتقرير: {transactions.length}</p>
-          </div>
-          <div className="w-24 sm:w-28 shrink-0 hidden sm:block pointer-events-none" />
-        </div>
-
-        {/* Printable KPI Cards (If selected) */}
-        {(cards.withdrawalsSum || cards.depositsSum || cards.depositsCount || cards.withdrawalsCount) && (
-          <div className="grid grid-cols-2 gap-3 mb-6" dir="rtl">
-            {cards.withdrawalsSum && (
-              <div className="p-3.5 rounded-xl border-2 border-rose-200 bg-rose-50/70">
-                <span className="text-xs font-bold text-rose-800 block">مجموع السحوبات</span>
-                <span className="text-xl font-black text-rose-700 ar-num block mt-1">
-                  {formatCurrency(totalWithd)}
-                </span>
-              </div>
-            )}
-
-            {cards.depositsSum && (
-              <div className="p-3.5 rounded-xl border-2 border-emerald-200 bg-emerald-50/70">
-                <span className="text-xs font-bold text-emerald-800 block">مجموع الإيداعات</span>
-                <span className="text-xl font-black text-emerald-700 ar-num block mt-1">
-                  {formatCurrency(totalDep)}
-                </span>
-              </div>
-            )}
-
-            {cards.depositsCount && (
-              <div className="p-3.5 rounded-xl border-2 border-sky-200 bg-sky-50/70">
-                <span className="text-xs font-bold text-sky-800 block">عدد الإيداعات</span>
-                <span className="text-xl font-black text-sky-950 ar-num block mt-1">
-                  {depCount} معاملة <span className="text-xs text-sky-700 font-bold">(نقداً: {cashDep} | بنك: {bankDep})</span>
-                </span>
-              </div>
-            )}
-
-            {cards.withdrawalsCount && (
-              <div className="p-3.5 rounded-xl border-2 border-amber-200 bg-amber-50/70">
-                <span className="text-xs font-bold text-amber-800 block">عدد السحوبات</span>
-                <span className="text-xl font-black text-amber-950 ar-num block mt-1">
-                  {withdCount} معاملة <span className="text-xs text-amber-700 font-bold">(نقداً: {cashWithd} | بنك: {bankWithd})</span>
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Printable Data Table */}
-        <table className="w-full text-right text-xs border-collapse border-2 border-zinc-900 mb-6" dir="rtl">
-          <thead>
-            <tr className="bg-zinc-100 text-zinc-950 font-black border-b-2 border-zinc-900">
-              {columns.clientName && <th className="p-2.5 border-l border-zinc-300">اسم الجهة / المستفيد</th>}
-              {columns.type && <th className="p-2.5 border-l border-zinc-300 text-center">نوع المعاملة</th>}
-              {columns.paymentMethod && <th className="p-2.5 border-l border-zinc-300 text-center">أسلوب الدفع</th>}
-              {columns.amount && <th className="p-2.5 border-l border-zinc-300 text-left">القيمة المالية</th>}
-              {columns.date && <th className="p-2.5 border-l border-zinc-300 text-center">التاريخ والوقت</th>}
-              {columns.notes && <th className="p-2.5">الملاحظات والبيان</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-xs font-bold text-zinc-500 bg-zinc-50">
-                  لا توجد معاملات مسجلة في هذا التقرير
-                </td>
-              </tr>
-            ) : (
-              transactions.map((tx, idx) => {
-              const isDeposit = tx.type === 'DEPOSIT'
-              return (
-                <tr key={tx.id || idx} className="border-b border-zinc-200">
-                  {columns.clientName && <td className="p-2.5 font-bold border-l border-zinc-200">{tx.client_name}</td>}
-                  {columns.type && (
-                    <td className="p-2.5 text-center border-l border-zinc-200">
-                      <span className={`font-black ${isDeposit ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {isDeposit ? 'إيداع (قبض)' : 'سحب (صرف)'}
-                      </span>
-                    </td>
-                  )}
-                  {columns.paymentMethod && (
-                    <td className="p-2.5 text-center border-l border-zinc-200 font-semibold">
-                      {tx.payment_method || 'نقداً'}
-                    </td>
-                  )}
-                  {columns.amount && (
-                    <td className="p-2.5 text-left border-l border-zinc-200 font-black ar-num">
-                      <span className={isDeposit ? 'text-emerald-700' : 'text-rose-700'}>
-                        {isDeposit ? '+' : '-'}{formatCurrency(tx.amount_cents)}
-                      </span>
-                    </td>
-                  )}
-                  {columns.date && (
-                    <td className="p-2.5 text-center border-l border-zinc-200 font-medium ar-num dir-ltr">
-                      {formatDate(tx.created_at)}
-                    </td>
-                  )}
-                  {columns.notes && <td className="p-2.5 text-zinc-600 font-medium">{tx.notes || '-'}</td>}
-                </tr>
-              )
-            })
-            )}
-          </tbody>
-        </table>
-
-        {/* Printable Footer */}
-        <div className="pt-6 border-t-2 border-zinc-900 flex justify-between text-xs font-bold text-zinc-800" dir="rtl">
-          <div>التوقيع: .........</div>
-        </div>
-      </div>,
-      document.body
-      )}
-
       {/* -------------------- ON-SCREEN INTERACTIVE CUSTOMIZATION & LIVE PREVIEW MODAL -------------------- */}
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 font-arabic select-none overflow-y-auto print:hidden" dir="rtl">
         <div className="w-full max-w-6xl h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col my-auto">
