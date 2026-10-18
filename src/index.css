@@ -203,3 +203,72 @@
     -webkit-app-region: no-drag;
   }
 }
+
+/* ─── Global Print Styles & PDF Export Engine ─── */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #09090b !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* When printing, completely hide #root so it takes zero space and never causes blank pages */
+  body > #root {
+    display: none !important;
+  }
+
+  /* Explicitly hide on-screen chrome, overlays, and toolbars */
+  aside, header, nav, .print\:hidden, [role="dialog"], .backdrop-blur-sm {
+    display: none !important;
+  }
+
+  /* Display printable container portaled into document.body cleanly */
+  #printable-custom-report,
+  #printable-dual-receipt,
+  #printable-treasury-report,
+  #printable-entity-ledger {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    color: #09090b !important;
+    padding: 6mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  table {
+    page-break-inside: auto !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+}

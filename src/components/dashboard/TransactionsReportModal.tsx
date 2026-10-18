@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Printer, X, CheckSquare, Square, FileText, SlidersHorizontal,
 } from 'lucide-react'
@@ -76,7 +77,108 @@ export function TransactionsReportModal({
       return
     }
     logUserAction('PRINT_REPORT', 'تقارير وطباعة', 'طباعة تقرير المعاملات الشامل', `معاملات مدرجة بالتقرير: ${transactions.length}`)
-    window.print()
+
+    const printElement = document.getElementById('printable-custom-report')
+    if (!printElement) {
+      window.print()
+      return
+    }
+
+    // Create a temporary hidden iframe for 100% clean, unclipped printing & PDF saving
+    const iframe = document.createElement('iframe')
+    iframe.id = 'report-print-frame'
+    iframe.style.position = 'fixed'
+    iframe.style.top = '-9999px'
+    iframe.style.left = '-9999px'
+    iframe.style.width = '210mm'
+    iframe.style.height = '297mm'
+    iframe.style.border = 'none'
+    iframe.style.visibility = 'hidden'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
+      window.print()
+      return
+    }
+
+    // Collect all stylesheets from current document
+    let styles = ''
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      styles += node.outerHTML
+    })
+
+    doc.open()
+    doc.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="utf-8">
+          <title>تقرير المعاملات والحركات المالية</title>
+          ${styles}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm;
+            }
+            html, body {
+              background: #ffffff !important;
+              color: #09090b !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              font-family: 'IBM Plex Arabic', 'Tajawal', system-ui, sans-serif !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              box-sizing: border-box !important;
+            }
+            .ar-num {
+              font-family: 'IBM Plex Arabic', 'Tajawal', sans-serif !important;
+              direction: ltr !important;
+              unicode-bidi: embed !important;
+            }
+            table {
+              page-break-inside: auto !important;
+              border-collapse: collapse !important;
+              width: 100% !important;
+            }
+            tr {
+              page-break-inside: avoid !important;
+              page-break-after: auto !important;
+            }
+            thead {
+              display: table-header-group !important;
+            }
+            tfoot {
+              display: table-footer-group !important;
+            }
+          </style>
+        </head>
+        <body class="bg-white text-zinc-950 p-4">
+          ${printElement.innerHTML}
+        </body>
+      </html>
+    `)
+    doc.close()
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+      } catch (err) {
+        console.error('Iframe print error, falling back to window.print():', err)
+        window.print()
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe)
+          }
+        }, 3000)
+      }
+    }, 400)
   }
 
   // Calculate live statistics for the report view
@@ -109,8 +211,9 @@ export function TransactionsReportModal({
 
   return (
     <>
-      {/* -------------------- PRINT MEDIA DOM CONTAINER (Exact Custom Output) -------------------- */}
-      <div id="printable-custom-report" className="hidden print:block font-arabic select-none bg-white text-zinc-950 p-6 w-full box-border">
+      {/* -------------------- PRINT MEDIA DOM CONTAINER (Portaled into document.body outside #root) -------------------- */}
+      {typeof document !== 'undefined' && createPortal(
+        <div id="printable-custom-report" className="hidden print:block font-arabic select-none bg-white text-zinc-950 p-6 w-full box-border" dir="rtl">
         <style>{`
           @media print {
             * {
@@ -230,7 +333,14 @@ export function TransactionsReportModal({
             </tr>
           </thead>
           <tbody>
-            {transactions.map((tx, idx) => {
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-xs font-bold text-zinc-500 bg-zinc-50">
+                  لا توجد معاملات مسجلة في هذا التقرير
+                </td>
+              </tr>
+            ) : (
+              transactions.map((tx, idx) => {
               const isDeposit = tx.type === 'DEPOSIT'
               return (
                 <tr key={tx.id || idx} className="border-b border-zinc-200">
@@ -262,7 +372,8 @@ export function TransactionsReportModal({
                   {columns.notes && <td className="p-2.5 text-zinc-600 font-medium">{tx.notes || '-'}</td>}
                 </tr>
               )
-            })}
+            })
+            )}
           </tbody>
         </table>
 
@@ -270,10 +381,12 @@ export function TransactionsReportModal({
         <div className="pt-6 border-t-2 border-zinc-900 flex justify-between text-xs font-bold text-zinc-800" dir="rtl">
           <div>التوقيع: .........</div>
         </div>
-      </div>
+      </div>,
+      document.body
+      )}
 
       {/* -------------------- ON-SCREEN INTERACTIVE CUSTOMIZATION & LIVE PREVIEW MODAL -------------------- */}
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 font-arabic select-none overflow-y-auto" dir="rtl">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 font-arabic select-none overflow-y-auto print:hidden" dir="rtl">
         <div className="w-full max-w-6xl h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col my-auto">
 
           {/* Modal Top Header Bar */}
