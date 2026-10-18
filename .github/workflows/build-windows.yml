@@ -1,4 +1,4 @@
-name: Build Windows Application
+name: Build Windows Application (.exe)
 
 on:
   push:
@@ -8,17 +8,17 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-# Required so the release step can create a GitHub Release and upload assets.
 permissions:
   contents: write
 
 jobs:
   build-windows:
-    name: Build Windows Executables
+    name: Build Windows (.exe)
     runs-on: windows-2022
 
     env:
       GYP_MSVS_VERSION: '2022'
+      CSC_IDENTITY_AUTO_DISCOVERY: false
 
     steps:
       - name: Checkout repository
@@ -31,38 +31,34 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm ci
 
-      - name: Build web application with Vite
+      - name: Build web assets and Electron main
         run: npm run build:web
 
-      - name: Package Windows Electron Application
+      - name: Package Windows Electron Application (.exe)
         run: npx electron-builder --win --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GYP_MSVS_VERSION: '2022'
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # Only the top level of release/ holds distributable files. A recursive glob
-      # also sweeps up release/win-unpacked/SallatAlkhair.exe, which is the raw
-      # Electron binary and cannot run without its sibling resources/ directory --
-      # downloading and running that one fails immediately.
       - name: Upload Windows Executable Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Financial-System-Windows-x64
+          name: Financial-System-Setup-Windows-x64
           path: release/*.exe
           if-no-files-found: error
 
-      # Releases serve the raw .exe at a public URL for direct one-click download.
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        continue-on-error: true
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $assets = Get-ChildItem -Path release -Filter *.exe | ForEach-Object { $_.FullName }
           if (-not $assets) { throw "No .exe files found in release/ to publish" }
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v1.0.0" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v1.0.8" }
           Write-Host "Publishing $($assets.Count) asset(s) for $tag"
           gh release create $tag $assets `
             --title "منظومة إدارة مالية - $tag" `
