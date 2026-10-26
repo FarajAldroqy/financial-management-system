@@ -126,19 +126,21 @@ export function EntityLedgerModal({
               }
               #printable-entity-ledger {
                 display: block !important;
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 210mm !important;
-                min-height: 297mm !important;
+                position: relative !important;
+                left: auto !important;
+                top: auto !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-height: auto !important;
                 background: white !important;
                 color: black !important;
-                padding: 10mm !important;
+                padding: 4mm !important;
+                margin: 0 auto !important;
                 box-sizing: border-box !important;
               }
               @page {
                 size: A4 portrait;
-                margin: 0;
+                margin: 8mm;
               }
             }
           `}</style>

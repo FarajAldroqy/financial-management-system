@@ -233,7 +233,6 @@
 
   /* Display printable container portaled into document.body cleanly */
   #printable-custom-report,
-  #printable-dual-receipt,
   #printable-treasury-report,
   #printable-entity-ledger {
     display: block !important;
@@ -246,6 +245,39 @@
     padding: 6mm !important;
     margin: 0 auto !important;
     box-sizing: border-box !important;
+  }
+
+  #printable-excel-invoice {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    color: #09090b !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+  }
+
+  #printable-dual-receipt {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: calc(297mm - 16mm) !important;
+    max-height: calc(297mm - 16mm) !important;
+    background: #ffffff !important;
+    color: #09090b !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
   }
 
   @page {

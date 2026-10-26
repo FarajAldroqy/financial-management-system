@@ -17,11 +17,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowDownCircle, ArrowUpCircle, Loader2, User, Users, Plus, Trash2, Clock } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Loader2, User, FileText, Plus, Trash2, Clock, Calendar, RotateCcw } from 'lucide-react'
 import type { TransactionCreate, PaymentMethod, TransactionSubtype } from '@/types'
-import { cleanAndNormalizeAmount, getLocalDeviceISOString } from '@/lib/utils'
+import { cleanAndNormalizeAmount, getLocalDeviceISOString, parseDateSafe } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
 import { useWallet } from '@/context/WalletContext'
+
+const formatForDateTimeLocal = (date: Date = new Date()) => {
+  const pad = (num: number) => String(num).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
 
 interface TransactionModalProps {
   open: boolean
@@ -41,10 +51,15 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
   const [tab, setTab] = useState<TransactionSubtype>('REGULAR')
   const [clientName, setClientName] = useState('')
   const [personName, setPersonName] = useState('')
+  const [invoiceTitle, setInvoiceTitle] = useState('')
+  const [invoiceItems, setInvoiceItems] = useState<Array<{ name: string; amount: string }>>([
+    { name: '', amount: '' },
+  ])
   const [personNames, setPersonNames] = useState<string[]>([''])
   const [amountStr, setAmountStr] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('نقداً')
   const [notes, setNotes] = useState('')
+  const [dateTimeLocal, setDateTimeLocal] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [customEntityMode, setCustomEntityMode] = useState(false)
@@ -61,8 +76,11 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
     setClientName(entities[0] || 'الخزينة الكلية')
     setPersonName('')
     setPersonNames([''])
+    setInvoiceTitle('')
+    setInvoiceItems([{ name: '', amount: '' }])
     setAmountStr('')
     setPaymentMethod('نقداً')
+    setDateTimeLocal(formatForDateTimeLocal(new Date()))
     setNotes('')
     setError('')
     setLoading(false)
@@ -88,21 +106,31 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
     setAmountStr(validVal)
   }
 
-  const handleAddPersonField = () => {
-    setPersonNames((prev) => [...prev, ''])
+  const handleAddInvoiceItem = () => {
+    setInvoiceItems((prev) => [...prev, { name: '', amount: '' }])
   }
 
-  const handleRemovePersonField = (index: number) => {
-    setPersonNames((prev) => prev.filter((_, i) => i !== index))
+  const handleRemoveInvoiceItem = (index: number) => {
+    setInvoiceItems((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handlePersonNameChange = (index: number, val: string) => {
-    setPersonNames((prev) => {
+  const handleInvoiceItemChange = (index: number, field: 'name' | 'amount', val: string) => {
+    setInvoiceItems((prev) => {
       const next = [...prev]
-      next[index] = val
+      if (field === 'amount') {
+        const valid = cleanAndNormalizeAmount(val, next[index].amount)
+        next[index] = { ...next[index], amount: valid }
+      } else {
+        next[index] = { ...next[index], name: val }
+      }
       return next
     })
   }
+
+  const invoiceTotal = invoiceItems.reduce((sum, item) => {
+    const val = parseFloat(item.amount.replace(/,/g, ''))
+    return sum + (isNaN(val) ? 0 : val)
+  }, 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,14 +141,23 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
       return
     }
 
-    const amount = parseFloat(amountStr.replace(/,/g, ''))
-    if (isNaN(amount) || amount <= 0) {
-      return setError('يرجى إدخال مبلغ صحيح أكبر من الصفر')
-    }
-
     let payload: TransactionCreate
 
+    let finalCreatedAt = getLocalDeviceISOString()
+    if (dateTimeLocal) {
+      const parsed = parseDateSafe(dateTimeLocal)
+      const year = parsed.getFullYear()
+      if (isNaN(parsed.getTime()) || year < 2000 || year > 2100) {
+        return setError('يرجى التأكد من صحة التاريخ المدخل (السنة يجب أن تكون بين 2000 و 2100)')
+      }
+      finalCreatedAt = getLocalDeviceISOString(parsed)
+    }
+
     if (tab === 'REGULAR') {
+      const amount = parseFloat(amountStr.replace(/,/g, ''))
+      if (isNaN(amount) || amount <= 0) {
+        return setError('يرجى إدخال مبلغ صحيح أكبر من الصفر')
+      }
       if (!clientName.trim()) {
         return setError('يرجى اختيار أو إدخال اسم الجهة / العميل')
       }
@@ -133,10 +170,14 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
-        created_at: getLocalDeviceISOString(),
+        created_at: finalCreatedAt,
       }
     } else if (isDeposit) {
       // Deposit from Person
+      const amount = parseFloat(amountStr.replace(/,/g, ''))
+      if (isNaN(amount) || amount <= 0) {
+        return setError('يرجى إدخال مبلغ صحيح أكبر من الصفر')
+      }
       if (!personName.trim()) {
         return setError('يرجى إدخال اسم الشخص المودِع')
       }
@@ -153,27 +194,52 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
-        created_at: getLocalDeviceISOString(),
+        created_at: finalCreatedAt,
       }
     } else {
-      // Withdrawal for Persons
-      const validPersons = personNames.map((p) => p.trim()).filter(Boolean)
-      if (validPersons.length === 0) {
-        return setError('يرجى إدخال اسم شخص واحد على الأقل وتسليمه المبلغ')
+      // Detailed Withdrawal ("سحب تفصيلي")
+      if (!invoiceTitle.trim()) {
+        return setError('يرجى إدخال عنوان الفاتورة')
       }
       const targetEntity = clientName.trim() || 'الخزينة الكلية'
+
+      if (invoiceItems.length === 0) {
+        return setError('يرجى إضافة عنصر واحد على الأقل للفاتورة')
+      }
+
+      for (let i = 0; i < invoiceItems.length; i++) {
+        const item = invoiceItems[i]
+        const val = parseFloat(item.amount.replace(/,/g, ''))
+        if (!item.name.trim()) {
+          return setError(`يرجى إدخال اسم العنصر في السطر رقم ${i + 1}`)
+        }
+        if (isNaN(val) || val <= 0) {
+          return setError(`يرجى إدخال قيمة صحيحة أكبر من الصفر للعنصر "${item.name.trim() || `#${i + 1}`}"`)
+        }
+      }
+
+      if (invoiceTotal <= 0) {
+        return setError('يرجى التأكد من أن إجمالي قيمة الفاتورة أكبر من الصفر')
+      }
+
+      const parsedItems = invoiceItems.map((item) => ({
+        name: item.name.trim(),
+        amount: parseFloat(item.amount.replace(/,/g, '')),
+      }))
+
       payload = {
         client_name: targetEntity,
         type: 'WITHDRAWAL',
         subtype: 'PERSON',
-        person_name: validPersons.join(' ، '),
-        person_names: validPersons,
-        amount_cents: Math.round(amount * 100),
+        person_name: invoiceTitle.trim(),
+        person_names: parsedItems.map((it) => `${it.name}: ${it.amount}`),
+        items: parsedItems,
+        amount_cents: Math.round(invoiceTotal * 100),
         payment_method: paymentMethod,
         notes: notes.trim(),
         status: 'COMPLETED',
         wallet_type: activeWallet || 'LYD',
-        created_at: getLocalDeviceISOString(),
+        created_at: finalCreatedAt,
       }
     }
 
@@ -199,7 +265,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="sm:max-w-lg bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xl rounded-2xl p-6 overflow-hidden" dir="rtl">
+      <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xl rounded-2xl p-6" dir="rtl">
         <DialogHeader className="text-right pb-2 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-3">
             <div
@@ -234,7 +300,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
           <button
             type="button"
             onClick={() => handleTabSwitch('REGULAR')}
-            className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
               tab === 'REGULAR'
                 ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
@@ -246,7 +312,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
           <button
             type="button"
             onClick={() => handleTabSwitch('PERSON')}
-            className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
               tab === 'PERSON'
                 ? isDeposit
                   ? 'bg-emerald-600 text-white shadow-xs'
@@ -261,8 +327,8 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
               </>
             ) : (
               <>
-                <Users className="w-3.5 h-3.5" />
-                <span>سحب للأشخاص</span>
+                <FileText className="w-3.5 h-3.5" />
+                <span>سحب تفصيلي</span>
               </>
             )}
           </button>
@@ -387,58 +453,30 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
             </>
           )}
 
-          {/* TAB 2: PERSON WITHDRAWAL */}
+          {/* TAB 2: DETAILED WITHDRAWAL */}
           {tab === 'PERSON' && !isDeposit && (
             <>
-              {/* Dynamic Multiple Person Names Input List */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
-                    أسماء الأشخاص المراد تسليم المبلغ لهم <span className="text-rose-500">*</span>
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={handleAddPersonField}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>إضافة شخص آخر</span>
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-40 overflow-y-auto pl-1">
-                  {personNames.map((pName, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Input
-                        type="text"
-                        placeholder={`اسم الشخص (${idx + 1})...`}
-                        value={pName}
-                        onChange={(e) => handlePersonNameChange(idx, e.target.value)}
-                        className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-arabic text-right flex-1"
-                        autoComplete="off"
-                      />
-                      {personNames.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemovePersonField(idx)}
-                          className="h-9 w-9 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg shrink-0"
-                          title="حذف هذا الشخص"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+              {/* Field 1: Invoice Title */}
+              <div className="space-y-1.5">
+                <Label htmlFor="modal-invoice-title" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
+                  عنوان الفاتورة <span className="text-rose-500">*</span>
+                </Label>
+                <Input
+                  id="modal-invoice-title"
+                  type="text"
+                  placeholder="أدخل عنوان الفاتورة (مثال: صيانة مكاتب، مشتريات وقود...)"
+                  value={invoiceTitle}
+                  onChange={(e) => setInvoiceTitle(e.target.value)}
+                  className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-arabic text-right"
+                  autoComplete="off"
+                />
               </div>
 
-              {/* Source Entity (Vault / Branch Selection) */}
+              {/* Field 2: Source Entity */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="modal-source-entity" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
-                    الجهة المراد السحب منها المال <span className="text-rose-500">*</span>
+                    اسم الجهة المراد السحب منها <span className="text-rose-500">*</span>
                   </Label>
                   {hasSavedEntities && (
                     <button
@@ -479,48 +517,152 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
                   />
                 )}
               </div>
+
+              {/* Field 3: Invoice Items with Add / Remove */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
+                    عناصر الفاتورة <span className="text-rose-500">*</span>
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={handleAddInvoiceItem}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إضافة عنصر آخر</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pl-1 pr-0.5">
+                  {invoiceItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded-xl border border-zinc-200/70 dark:border-zinc-700/60">
+                      <span className="text-[11px] font-bold text-zinc-400 w-5 text-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <Input
+                          type="text"
+                          placeholder="اسم العنصر"
+                          value={item.name}
+                          onChange={(e) => handleInvoiceItemChange(idx, 'name', e.target.value)}
+                          className="h-8 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-arabic text-right"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="w-28 sm:w-32 relative shrink-0">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="قيمة العنصر"
+                          value={item.amount}
+                          onChange={(e) => handleInvoiceItemChange(idx, 'amount', e.target.value)}
+                          className="h-8 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg pl-8 font-sans text-left ar-num"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-semibold pointer-events-none">
+                          {activeWalletMeta?.symbol || 'د.ل'}
+                        </span>
+                      </div>
+                      {invoiceItems.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveInvoiceItem(idx)}
+                          className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg shrink-0 cursor-pointer"
+                          title="حذف هذا العنصر"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Real-time Total Calculation Summary Card */}
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/50">
+                  <span className="text-xs font-bold text-rose-900 dark:text-rose-200">
+                    إجمالي قيمة الفاتورة:
+                  </span>
+                  <span className="text-sm font-extrabold text-rose-700 dark:text-rose-300 ar-num font-sans">
+                    {invoiceTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {activeWalletMeta?.symbol || 'د.ل'}
+                  </span>
+                </div>
+              </div>
             </>
           )}
 
-          {/* COMMON FIELD 1: Amount */}
-          <div className="space-y-1.5">
-            <Label htmlFor="modal-amount" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
-              القيمة ({activeWalletMeta?.labelAr || 'بالدينار'} {activeWalletMeta?.symbol || 'د.ل'}) <span className="text-rose-500">*</span>
-            </Label>
-            <div className="relative">
-              <Input
-                id="modal-amount"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={amountStr}
-                onChange={handleAmountChange}
-                className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg pl-14 font-sans text-left ar-num"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-semibold font-arabic pointer-events-none">
-                {activeWalletMeta?.symbol || 'د.ل'}
-              </span>
+          {/* COMMON FIELD 1: Amount (only for REGULAR or DEPOSIT) */}
+          {(tab === 'REGULAR' || isDeposit) && (
+            <div className="space-y-1.5">
+              <Label htmlFor="modal-amount" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
+                القيمة ({activeWalletMeta?.labelAr || 'بالدينار'} {activeWalletMeta?.symbol || 'د.ل'}) <span className="text-rose-500">*</span>
+              </Label>
+              <div className="relative">
+                <Input
+                  id="modal-amount"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amountStr}
+                  onChange={handleAmountChange}
+                  className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg pl-14 font-sans text-left ar-num"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-semibold font-arabic pointer-events-none">
+                  {activeWalletMeta?.symbol || 'د.ل'}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* COMMON FIELD 2: Payment Method */}
-          <div className="space-y-1.5">
-            <Label htmlFor="modal-payment-method" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
-              اسلوب الدفع
-            </Label>
-            <Select
-              value={paymentMethod}
-              onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
-            >
-              <SelectTrigger id="modal-payment-method" className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-arabic" dir="rtl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700" dir="rtl">
-                <SelectItem value="نقداً" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">نقداً (Cash)</SelectItem>
-                <SelectItem value="بنك" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بنك (Bank)</SelectItem>
-                <SelectItem value="بطاقة" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بطاقة (Card)</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* COMMON FIELDS: Payment Method & Transaction Date/Time */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* اسلوب الدفع */}
+            <div className="space-y-1.5">
+              <Label htmlFor="modal-payment-method" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block text-right">
+                اسلوب الدفع
+              </Label>
+              <Select
+                value={paymentMethod}
+                onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
+              >
+                <SelectTrigger id="modal-payment-method" className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-arabic" dir="rtl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700" dir="rtl">
+                  <SelectItem value="نقداً" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">نقداً (Cash)</SelectItem>
+                  <SelectItem value="بنك" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بنك (Bank)</SelectItem>
+                  <SelectItem value="بطاقة" className="text-xs text-zinc-800 dark:text-zinc-200 font-arabic">بطاقة (Card)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* تاريخ ووقت المعاملة */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="modal-datetime" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                  <span>تاريخ ووقت المعاملة</span>
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setDateTimeLocal(formatForDateTimeLocal(new Date()))}
+                  className="text-[10px] text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-0.5 cursor-pointer font-arabic"
+                  title="الرجوع للتوقيت الحالي للجهاز"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>الآن</span>
+                </button>
+              </div>
+              <Input
+                id="modal-datetime"
+                type="datetime-local"
+                value={dateTimeLocal}
+                onChange={(e) => setDateTimeLocal(e.target.value)}
+                dir="ltr"
+                className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 rounded-lg font-mono focus-visible:ring-zinc-400 text-left"
+              />
+            </div>
           </div>
 
           {/* COMMON FIELD 3: Reason / Notes */}
@@ -560,7 +702,7 @@ export function TransactionModal({ open, mode, onClose, onSubmit, entities = [] 
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin ml-1.5" />}
               {tab === 'REGULAR'
                 ? isDeposit ? 'تأكيد الإيداع العادي' : 'تأكيد السحب العادي'
-                : isDeposit ? 'تأكيد الإيداع من شخص' : 'تأكيد السحب للأشخاص'
+                : isDeposit ? 'تأكيد الإيداع من شخص' : 'تأكيد السحب التفصيلي'
               }
             </Button>
 

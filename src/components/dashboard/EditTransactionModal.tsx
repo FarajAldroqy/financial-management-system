@@ -29,6 +29,7 @@ import {
   User,
   Users,
   Wallet,
+  FileText,
 } from 'lucide-react'
 import type { Transaction, TransactionUpdate, PaymentMethod, TransactionSubtype } from '@/types'
 import { cleanAndNormalizeAmount, normalizeArabicNumerals } from '@/lib/utils'
@@ -368,8 +369,8 @@ export function EditTransactionModal({
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
                 }`}
               >
-                <User className="w-3.5 h-3.5" />
-                <span>عهدة / أشخاص</span>
+                {type === 'WITHDRAWAL' ? <FileText className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+                <span>{type === 'WITHDRAWAL' ? 'سحب تفصيلي' : 'إيداع من شخص'}</span>
               </button>
             </div>
           </div>

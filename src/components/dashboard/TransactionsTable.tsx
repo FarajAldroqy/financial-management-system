@@ -1070,7 +1070,7 @@ export function TransactionsTable({
                                         <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium truncate">
                                           {isDeposit
                                             ? `بواسطة المودِع: ${tx.person_name || 'شخص'}`
-                                            : `المستلمون: ${tx.person_names && tx.person_names.length > 0 ? tx.person_names.join(' ، ') : (tx.person_name || 'شخص')}`
+                                            : `فاتورة: ${tx.person_name || 'سحب تفصيلي'}${tx.items && tx.items.length > 0 ? ` (${tx.items.length} عناصر)` : ''}`
                                           }
                                         </span>
                                       )}
@@ -1087,7 +1087,7 @@ export function TransactionsTable({
                                         : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                                     }`}>
                                       {tx.subtype === 'PERSON'
-                                        ? isDeposit ? 'إيداع من شخص' : 'سحب للأشخاص'
+                                        ? isDeposit ? 'إيداع من شخص' : 'سحب تفصيلي'
                                         : isDeposit ? 'إيداع' : 'سحب'
                                       }
                                     </span>

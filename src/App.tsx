@@ -22,6 +22,7 @@ import { Users, Settings, Database, FileText, Sparkles,
   HelpCircle, Search, LayoutDashboard, Banknote, Building2, Coins,
 } from 'lucide-react'
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard'
+import { ExcelInvoiceBuilder } from '@/components/excel/ExcelInvoiceBuilder'
 import { WalletProvider, useWallet } from '@/context/WalletContext'
 
 // Initialize fallback mock API if running in browser mode outside Electron
@@ -30,6 +31,7 @@ initMockElectronAPI()
 const SECTION_TITLES: Record<string, string> = {
   dashboard:    'Dashboard',
   treasury:     'الخزينة',
+  excel:        'ملفات Exel',
   transactions: 'Transactions',
   analytics:    'Analytics',
   projects:     'Projects',
@@ -545,6 +547,9 @@ function AppShell() {
             }}
           />
         )
+
+      case 'excel':
+        return <ExcelInvoiceBuilder />
 
       case 'analytics':
         return <AnalyticsDashboard dateFilter={dateFilter} />

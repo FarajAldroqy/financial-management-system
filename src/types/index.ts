@@ -1,6 +1,11 @@
 export type PaymentMethod = 'نقداً' | 'بنك' | 'تحويل مصرفي' | 'بطاقة'
 export type TransactionSubtype = 'REGULAR' | 'PERSON'
 
+export interface InvoiceItem {
+  name: string
+  amount: number
+}
+
 export interface Transaction {
   id: number
   client_name: string
@@ -8,6 +13,7 @@ export interface Transaction {
   subtype?: TransactionSubtype
   person_name?: string
   person_names?: string[]
+  items?: InvoiceItem[]
   amount_cents: number
   payment_method?: PaymentMethod | string
   notes?: string
@@ -25,6 +31,7 @@ export interface TransactionCreate {
   subtype?: TransactionSubtype
   person_name?: string
   person_names?: string[]
+  items?: InvoiceItem[]
   amount_cents: number
   payment_method: PaymentMethod | string
   notes?: string
@@ -40,6 +47,7 @@ export interface TransactionUpdate {
   subtype?: TransactionSubtype
   person_name?: string
   person_names?: string[]
+  items?: InvoiceItem[]
   amount_cents?: number
   payment_method?: PaymentMethod | string
   notes?: string

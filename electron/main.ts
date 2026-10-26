@@ -82,6 +82,7 @@ function initDatabase() {
         subtype        TEXT    NOT NULL DEFAULT 'REGULAR',
         person_name    TEXT    NOT NULL DEFAULT '',
         person_names   TEXT    NOT NULL DEFAULT '',
+        items          TEXT    NOT NULL DEFAULT '',
         amount_cents   BIGINT  NOT NULL,
         payment_method TEXT    NOT NULL DEFAULT 'نقداً',
         status         TEXT    NOT NULL DEFAULT 'COMPLETED',
@@ -124,6 +125,9 @@ function initDatabase() {
     }
     if (!colNames.has('person_names')) {
       try { db.exec(`ALTER TABLE transactions ADD COLUMN person_names TEXT NOT NULL DEFAULT ''`) } catch {}
+    }
+    if (!colNames.has('items')) {
+      try { db.exec(`ALTER TABLE transactions ADD COLUMN items TEXT NOT NULL DEFAULT ''`) } catch {}
     }
     if (!colNames.has('wallet_type')) {
       try { db.exec(`ALTER TABLE transactions ADD COLUMN wallet_type TEXT NOT NULL DEFAULT 'LYD'`) } catch {}
@@ -292,7 +296,15 @@ function registerIpcHandlers() {
             person_names = [t.person_names]
           }
         }
-        return { ...t, person_names }
+        let items: any[] | undefined = undefined
+        if (t.items) {
+          try {
+            items = JSON.parse(t.items)
+          } catch {
+            items = undefined
+          }
+        }
+        return { ...t, person_names, items }
       })
 
       return { data, total, page, pageSize }
@@ -309,6 +321,7 @@ function registerIpcHandlers() {
     subtype?: string
     person_name?: string
     person_names?: string[]
+    items?: any[]
     amount_cents: number
     payment_method?: string
     notes?: string
@@ -323,6 +336,7 @@ function registerIpcHandlers() {
       const subtype = payload.subtype || 'REGULAR'
       const personName = payload.person_name || ''
       const personNamesStr = payload.person_names ? JSON.stringify(payload.person_names) : ''
+      const itemsStr = payload.items ? JSON.stringify(payload.items) : ''
       const walletType = payload.wallet_type || 'LYD'
 
       // Self-healing migration check for all columns
@@ -343,6 +357,9 @@ function registerIpcHandlers() {
         }
         if (!colNames.has('person_names')) {
           try { db.exec(`ALTER TABLE transactions ADD COLUMN person_names TEXT NOT NULL DEFAULT ''`) } catch {}
+        }
+        if (!colNames.has('items')) {
+          try { db.exec(`ALTER TABLE transactions ADD COLUMN items TEXT NOT NULL DEFAULT ''`) } catch {}
         }
         if (!colNames.has('wallet_type')) {
           try { db.exec(`ALTER TABLE transactions ADD COLUMN wallet_type TEXT NOT NULL DEFAULT 'LYD'`) } catch {}
@@ -367,8 +384,8 @@ function registerIpcHandlers() {
       let result: any
       try {
         const stmt = db.prepare(`
-          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
+          INSERT INTO transactions (client_name, type, subtype, person_name, person_names, items, amount_cents, payment_method, status, notes, wallet_type, is_pinned, is_archived, is_deleted, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
         `)
         result = stmt.run(
           payload.client_name,
@@ -376,6 +393,7 @@ function registerIpcHandlers() {
           subtype,
           personName,
           personNamesStr,
+          itemsStr,
           payload.amount_cents,
           paymentMethod,
           status,
@@ -413,6 +431,13 @@ function registerIpcHandlers() {
           createdRow.person_names = [createdRow.person_names]
         }
       }
+      if (createdRow && createdRow.items) {
+        try {
+          createdRow.items = JSON.parse(createdRow.items)
+        } catch {
+          createdRow.items = undefined
+        }
+      }
       return createdRow
     } catch (err: any) {
       console.error('Failed to create transaction:', err)
@@ -420,7 +445,7 @@ function registerIpcHandlers() {
     }
   })
 
-  // PUT /transactions – full transaction update including client_name, type, amount, subtype, person_names, date, notes, etc.
+  // PUT /transactions – full transaction update including client_name, type, amount, subtype, person_names, items, date, notes, etc.
   ipcMain.handle('db:update-transaction', (_event, payload: {
     id: number
     client_name?: string
@@ -428,6 +453,7 @@ function registerIpcHandlers() {
     subtype?: string
     person_name?: string
     person_names?: string[]
+    items?: any[]
     amount_cents?: number
     payment_method?: string
     notes?: string
@@ -458,6 +484,7 @@ function registerIpcHandlers() {
       const subtype = payload.subtype !== undefined ? payload.subtype : (existing.subtype || 'REGULAR')
       const personName = payload.person_name !== undefined ? payload.person_name.trim() : (existing.person_name || '')
       const personNamesStr = payload.person_names !== undefined ? JSON.stringify(payload.person_names) : (existing.person_names || '')
+      const itemsStr = payload.items !== undefined ? JSON.stringify(payload.items) : (existing.items || '')
       
       const rawAmount = payload.amount_cents !== undefined ? payload.amount_cents : existing.amount_cents
       const amountCents = Math.round(Number(rawAmount))
@@ -482,6 +509,7 @@ function registerIpcHandlers() {
               subtype = ?,
               person_name = ?,
               person_names = ?,
+              items = ?,
               amount_cents = ?,
               payment_method = ?,
               status = ?,
@@ -495,6 +523,7 @@ function registerIpcHandlers() {
           subtype,
           personName,
           personNamesStr,
+          itemsStr,
           amountCents,
           paymentMethod,
           status,
@@ -525,6 +554,13 @@ function registerIpcHandlers() {
           updatedRow.person_names = JSON.parse(updatedRow.person_names)
         } catch {
           updatedRow.person_names = [updatedRow.person_names]
+        }
+      }
+      if (updatedRow && updatedRow.items) {
+        try {
+          updatedRow.items = JSON.parse(updatedRow.items)
+        } catch {
+          updatedRow.items = undefined
         }
       }
 

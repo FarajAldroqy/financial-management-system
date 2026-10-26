@@ -6,6 +6,7 @@ import {
   Archive,
   Trash2,
   Settings,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { DateFilter } from '@/types'
@@ -22,7 +23,8 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', labelAr: 'لوحة التحكم', icon: LayoutDashboard },
-  { id: 'treasury', label: 'Treasury', labelAr: 'الخزينة    ', icon: Coins },
+  { id: 'treasury', label: 'Treasury', labelAr: 'الخزينة', icon: Coins },
+  { id: 'excel', label: 'Excel Files', labelAr: 'ملفات Exel', icon: FileSpreadsheet },
 ]
 
 interface SidebarProps {

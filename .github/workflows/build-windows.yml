@@ -58,7 +58,8 @@ jobs:
         run: |
           $assets = Get-ChildItem -Path release -Filter *.exe | ForEach-Object { $_.FullName }
           if (-not $assets) { throw "No .exe files found in release/ to publish" }
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v1.0.8" }
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v$($pkg.version)" }
           Write-Host "Publishing $($assets.Count) asset(s) for $tag"
           gh release create $tag $assets `
             --title "منظومة إدارة مالية - $tag" `
