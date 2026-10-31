@@ -3,7 +3,7 @@ import {
   Printer, X, CheckSquare, Square, FileText, SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatCurrency, formatDate, getDateFilterText } from '@/lib/utils'
+import { formatCurrency, formatDate, getDateFilterText, getTransactionItems } from '@/lib/utils'
 import type { Transaction, Stats, DateFilter } from '@/types'
 import { usePermission } from '@/hooks/usePermission'
 import { logUserAction } from '@/lib/auditLogger'
@@ -21,6 +21,7 @@ interface ColumnToggles {
 interface CardToggles {
   withdrawalsSum: boolean
   depositsSum: boolean
+  netBalance: boolean
   depositsCount: boolean
   withdrawalsCount: boolean
 }
@@ -56,9 +57,38 @@ export function TransactionsReportModal({
   const [cards, setCards] = useState<CardToggles>({
     withdrawalsSum: true,
     depositsSum: true,
+    netBalance: true,
     depositsCount: true,
     withdrawalsCount: true,
   })
+
+  // Calculate live statistics for the report view
+  let totalDep = 0
+  let totalWithd = 0
+  let cashDep = 0
+  let bankDep = 0
+  let cashWithd = 0
+  let bankWithd = 0
+  let depCount = 0
+  let withdCount = 0
+
+  transactions.forEach((tx) => {
+    const isCash = !tx.payment_method || tx.payment_method === 'نقداً'
+    if (tx.type === 'DEPOSIT') {
+      totalDep += tx.amount_cents
+      depCount += 1
+      if (isCash) cashDep += 1
+      else bankDep += 1
+    } else {
+      totalWithd += tx.amount_cents
+      withdCount += 1
+      if (isCash) cashWithd += 1
+      else bankWithd += 1
+    }
+  })
+
+  const netBalance = totalDep - totalWithd
+  const isNetPositive = netBalance >= 0
 
   if (!open) return null
 
@@ -79,18 +109,29 @@ export function TransactionsReportModal({
 
     // ── Build KPI cards HTML string ──────────────────────────────────────────
     let cardsHtml = ''
-    if (cards.withdrawalsSum || cards.depositsSum || cards.depositsCount || cards.withdrawalsCount) {
-      cardsHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">'
+    if (cards.withdrawalsSum || cards.depositsSum || cards.netBalance || cards.depositsCount || cards.withdrawalsCount) {
+      cardsHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:12px;margin-bottom:24px;">'
+      if (cards.depositsSum) {
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #a7f3d0;background:#ecfdf5;">
+          <span style="font-size:11px;font-weight:700;color:#065f46;display:block;">مجموع الإيداعات</span>
+          <span style="font-size:20px;font-weight:900;color:#047857;display:block;margin-top:4px;">${formatCurrency(totalDep)}</span>
+        </div>`
+      }
       if (cards.withdrawalsSum) {
         cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #fecaca;background:#fff1f2;">
           <span style="font-size:11px;font-weight:700;color:#991b1b;display:block;">مجموع السحوبات</span>
           <span style="font-size:20px;font-weight:900;color:#b91c1c;display:block;margin-top:4px;">${formatCurrency(totalWithd)}</span>
         </div>`
       }
-      if (cards.depositsSum) {
-        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid #a7f3d0;background:#ecfdf5;">
-          <span style="font-size:11px;font-weight:700;color:#065f46;display:block;">مجموع الإيداعات</span>
-          <span style="font-size:20px;font-weight:900;color:#047857;display:block;margin-top:4px;">${formatCurrency(totalDep)}</span>
+      if (cards.netBalance) {
+        const netBorder = isNetPositive ? '#a7f3d0' : '#fecaca'
+        const netBg = isNetPositive ? '#ecfdf5' : '#fff1f2'
+        const netLabelColor = isNetPositive ? '#065f46' : '#991b1b'
+        const netValColor = isNetPositive ? '#047857' : '#b91c1c'
+        const netSign = netBalance > 0 ? '+' : ''
+        cardsHtml += `<div style="padding:14px;border-radius:12px;border:2px solid ${netBorder};background:${netBg};">
+          <span style="font-size:11px;font-weight:700;color:${netLabelColor};display:block;">الصافي</span>
+          <span style="font-size:20px;font-weight:900;color:${netValColor};display:block;margin-top:4px;">${netSign}${formatCurrency(netBalance)}</span>
         </div>`
       }
       if (cards.depositsCount) {
@@ -124,16 +165,63 @@ export function TransactionsReportModal({
     } else {
       transactions.forEach((tx) => {
         const isDeposit = tx.type === 'DEPOSIT'
+        const items = getTransactionItems(tx)
+        const isDetailedWithdrawal = !isDeposit && (tx.subtype === 'PERSON' || items.length > 0) && items.length > 0
         const typeColor = isDeposit ? '#047857' : '#b91c1c'
         const amtColor  = isDeposit ? '#047857' : '#b91c1c'
         const amtSign   = isDeposit ? '+' : '-'
-        let row = '<tr style="border-bottom:1px solid #e4e4e7;">'
-        if (columns.clientName)    row += `<td style="padding:10px;font-weight:700;border-left:1px solid #e4e4e7;text-align:right;">${tx.client_name ?? ''}</td>`
-        if (columns.type)          row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;"><span style="font-weight:900;color:${typeColor};">${isDeposit ? 'إيداع (قبض)' : 'سحب (صرف)'}</span></td>`
+
+        let invoiceTableHtml = ''
+        if (isDetailedWithdrawal) {
+          const invTitle = tx.person_name || 'فاتورة سحب تفصيلي'
+          invoiceTableHtml = `
+            <div style="margin-top:6px;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;background:#f8fafc;font-size:10px;">
+              <div style="background:#f1f5f9;padding:4px 8px;font-weight:800;color:#0f172a;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;justify-content:space-between;">
+                <span>فاتورة: ${invTitle}</span>
+                <span style="font-size:9px;color:#64748b;font-weight:600;">(${items.length} عناصر)</span>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:10px;text-align:right;">
+                <thead>
+                  <tr style="background:#ffffff;border-bottom:1px solid #e2e8f0;color:#475569;font-weight:700;">
+                    <th style="padding:3px 6px;width:24px;text-align:center;border-left:1px solid #e2e8f0;">#</th>
+                    <th style="padding:3px 6px;text-align:right;border-left:1px solid #e2e8f0;">عناصر الفاتورة</th>
+                    <th style="padding:3px 6px;text-align:left;width:80px;">القيمة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${items.map((it, i) => `
+                    <tr style="border-bottom:1px solid #e2e8f0;${i % 2 === 1 ? 'background:#f8fafc;' : 'background:#ffffff;'}">
+                      <td style="padding:3px 6px;text-align:center;color:#64748b;border-left:1px solid #e2e8f0;font-weight:600;">${i + 1}</td>
+                      <td style="padding:3px 6px;color:#1e293b;border-left:1px solid #e2e8f0;font-weight:600;">${it.name}</td>
+                      <td style="padding:3px 6px;text-align:left;font-weight:700;color:#b91c1c;direction:ltr;">${formatCurrency(Math.round(it.amount * 100))}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `
+        }
+
+        let row = '<tr style="border-bottom:1px solid #e4e4e7;vertical-align:top;">'
+        if (columns.clientName) {
+          row += `<td style="padding:10px;border-left:1px solid #e4e4e7;text-align:right;">
+            <div style="font-weight:700;color:#18181b;">${tx.client_name ?? ''}</div>
+            ${invoiceTableHtml}
+          </td>`
+        }
+        if (columns.type) {
+          const typeLabel = isDeposit ? 'إيداع (قبض)' : isDetailedWithdrawal ? 'سحب تفصيلي' : 'سحب (صرف)'
+          row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;"><span style="font-weight:900;color:${typeColor};">${typeLabel}</span></td>`
+        }
         if (columns.paymentMethod) row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;font-weight:600;">${tx.payment_method || 'نقداً'}</td>`
         if (columns.amount)        row += `<td style="padding:10px;text-align:left;border-left:1px solid #e4e4e7;font-weight:900;"><span style="color:${amtColor};">${amtSign}${formatCurrency(tx.amount_cents)}</span></td>`
         if (columns.date)          row += `<td style="padding:10px;text-align:center;border-left:1px solid #e4e4e7;font-weight:500;direction:ltr;">${formatDate(tx.created_at)}</td>`
-        if (columns.notes)         row += `<td style="padding:10px;text-align:right;color:#52525b;font-weight:500;">${tx.notes || '-'}</td>`
+        if (columns.notes) {
+          row += `<td style="padding:10px;text-align:right;color:#52525b;font-weight:500;">
+            ${tx.notes || '-'}
+            ${!columns.clientName ? invoiceTableHtml : ''}
+          </td>`
+        }
         row += '</tr>'
         tbodyRows += row
       })
@@ -254,31 +342,6 @@ export function TransactionsReportModal({
       }, 600)
     })
   }
-
-  // Calculate live statistics for the report view
-  let totalDep = 0
-  let totalWithd = 0
-  let cashDep = 0
-  let bankDep = 0
-  let cashWithd = 0
-  let bankWithd = 0
-  let depCount = 0
-  let withdCount = 0
-
-  transactions.forEach((tx) => {
-    const isCash = !tx.payment_method || tx.payment_method === 'نقداً'
-    if (tx.type === 'DEPOSIT') {
-      totalDep += tx.amount_cents
-      depCount += 1
-      if (isCash) cashDep += 1
-      else bankDep += 1
-    } else {
-      totalWithd += tx.amount_cents
-      withdCount += 1
-      if (isCash) cashWithd += 1
-      else bankWithd += 1
-    }
-  })
 
   // Format Date Filter Label
   const filterText = getDateFilterText(dateFilter)
@@ -418,6 +481,15 @@ export function TransactionsReportModal({
                 <div className="space-y-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                   <button
                     type="button"
+                    onClick={() => toggleCard('depositsSum')}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-right cursor-pointer"
+                  >
+                    <span>بطاقة مجموع الإيداعات</span>
+                    {cards.depositsSum ? <CheckSquare className="w-4 h-4 text-emerald-600" /> : <Square className="w-4 h-4 text-zinc-400" />}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => toggleCard('withdrawalsSum')}
                     className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-right cursor-pointer"
                   >
@@ -427,11 +499,11 @@ export function TransactionsReportModal({
 
                   <button
                     type="button"
-                    onClick={() => toggleCard('depositsSum')}
+                    onClick={() => toggleCard('netBalance')}
                     className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-right cursor-pointer"
                   >
-                    <span>بطاقة مجموع الإيداعات</span>
-                    {cards.depositsSum ? <CheckSquare className="w-4 h-4 text-emerald-600" /> : <Square className="w-4 h-4 text-zinc-400" />}
+                    <span>بطاقة الصافي</span>
+                    {cards.netBalance ? <CheckSquare className="w-4 h-4 text-emerald-600" /> : <Square className="w-4 h-4 text-zinc-400" />}
                   </button>
 
                   <button
@@ -475,8 +547,17 @@ export function TransactionsReportModal({
                 </div>
 
                 {/* Preview KPI Cards */}
-                {(cards.withdrawalsSum || cards.depositsSum || cards.depositsCount || cards.withdrawalsCount) && (
-                  <div className="grid grid-cols-2 gap-3">
+                {(cards.withdrawalsSum || cards.depositsSum || cards.netBalance || cards.depositsCount || cards.withdrawalsCount) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {cards.depositsSum && (
+                      <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70">
+                        <span className="text-[11px] font-bold text-emerald-800 block">مجموع الإيداعات</span>
+                        <span className="text-lg font-black text-emerald-700 ar-num block mt-0.5">
+                          {formatCurrency(totalDep)}
+                        </span>
+                      </div>
+                    )}
+
                     {cards.withdrawalsSum && (
                       <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/70">
                         <span className="text-[11px] font-bold text-rose-800 block">مجموع السحوبات</span>
@@ -486,11 +567,13 @@ export function TransactionsReportModal({
                       </div>
                     )}
 
-                    {cards.depositsSum && (
-                      <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70">
-                        <span className="text-[11px] font-bold text-emerald-800 block">مجموع الإيداعات</span>
-                        <span className="text-lg font-black text-emerald-700 ar-num block mt-0.5">
-                          {formatCurrency(totalDep)}
+                    {cards.netBalance && (
+                      <div className={`p-3 rounded-xl border ${isNetPositive ? 'border-emerald-200 bg-emerald-50/70' : 'border-rose-200 bg-rose-50/70'}`}>
+                        <span className={`text-[11px] font-bold block ${isNetPositive ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          الصافي
+                        </span>
+                        <span className={`text-lg font-black ar-num block mt-0.5 ${isNetPositive ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {netBalance > 0 ? '+' : ''}{formatCurrency(netBalance)}
                         </span>
                       </div>
                     )}
@@ -531,13 +614,47 @@ export function TransactionsReportModal({
                     <tbody>
                       {transactions.map((tx, idx) => {
                         const isDeposit = tx.type === 'DEPOSIT'
+                        const items = getTransactionItems(tx)
+                        const isDetailedWithdrawal = !isDeposit && (tx.subtype === 'PERSON' || items.length > 0) && items.length > 0
                         return (
-                          <tr key={tx.id || idx} className="border-b border-zinc-200 hover:bg-zinc-50">
-                            {columns.clientName && <td className="p-2.5 font-bold border-l border-zinc-200">{tx.client_name}</td>}
+                          <tr key={tx.id || idx} className="border-b border-zinc-200 hover:bg-zinc-50 align-top">
+                            {columns.clientName && (
+                              <td className="p-2.5 border-l border-zinc-200 text-right">
+                                <div className="font-bold text-zinc-900">{tx.client_name}</div>
+                                {isDetailedWithdrawal && (
+                                  <div className="mt-1.5 border border-zinc-300 rounded-lg overflow-hidden bg-zinc-50/90 text-[10px]">
+                                    <div className="bg-zinc-200/80 px-2 py-1 font-bold text-zinc-900 border-b border-zinc-300 flex items-center justify-between">
+                                      <span>فاتورة: {tx.person_name || 'سحب تفصيلي'}</span>
+                                      <span className="text-[9px] text-zinc-500 font-mono">({items.length} عناصر)</span>
+                                    </div>
+                                    <table className="w-full text-right border-collapse text-[10px]">
+                                      <thead>
+                                        <tr className="bg-white/80 text-zinc-600 border-b border-zinc-200 font-bold">
+                                          <th className="p-1 w-6 text-center border-l border-zinc-200">#</th>
+                                          <th className="p-1 border-l border-zinc-200">عناصر الفاتورة</th>
+                                          <th className="p-1 text-left w-24">القيمة</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {items.map((it, i) => (
+                                          <tr key={i} className="border-b border-zinc-200/60 last:border-b-0 hover:bg-white">
+                                            <td className="p-1 text-center text-zinc-400 border-l border-zinc-200 font-mono">{i + 1}</td>
+                                            <td className="p-1 font-semibold text-zinc-800 border-l border-zinc-200">{it.name}</td>
+                                            <td className="p-1 text-left font-bold text-rose-700 font-sans ar-num">
+                                              {formatCurrency(Math.round(it.amount * 100))}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            )}
                             {columns.type && (
                               <td className="p-2.5 text-center border-l border-zinc-200">
                                 <span className={`font-black ${isDeposit ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                  {isDeposit ? 'إيداع (قبض)' : 'سحب (صرف)'}
+                                  {isDeposit ? 'إيداع (قبض)' : isDetailedWithdrawal ? 'سحب تفصيلي' : 'سحب (صرف)'}
                                 </span>
                               </td>
                             )}
@@ -558,7 +675,32 @@ export function TransactionsReportModal({
                                 {formatDate(tx.created_at)}
                               </td>
                             )}
-                            {columns.notes && <td className="p-2.5 text-zinc-600 font-medium">{tx.notes || '-'}</td>}
+                            {columns.notes && (
+                              <td className="p-2.5 text-zinc-600 font-medium">
+                                <div>{tx.notes || '-'}</div>
+                                {!columns.clientName && isDetailedWithdrawal && (
+                                  <div className="mt-1.5 border border-zinc-300 rounded-lg overflow-hidden bg-zinc-50/90 text-[10px]">
+                                    <div className="bg-zinc-200/80 px-2 py-1 font-bold text-zinc-900 border-b border-zinc-300 flex items-center justify-between">
+                                      <span>فاتورة: {tx.person_name || 'سحب تفصيلي'}</span>
+                                      <span className="text-[9px] text-zinc-500 font-mono">({items.length} عناصر)</span>
+                                    </div>
+                                    <table className="w-full text-right border-collapse text-[10px]">
+                                      <tbody>
+                                        {items.map((it, i) => (
+                                          <tr key={i} className="border-b border-zinc-200/60 last:border-b-0">
+                                            <td className="p-1 text-center text-zinc-400 font-mono">{i + 1}</td>
+                                            <td className="p-1 font-semibold text-zinc-800">{it.name}</td>
+                                            <td className="p-1 text-left font-bold text-rose-700 font-sans ar-num">
+                                              {formatCurrency(Math.round(it.amount * 100))}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         )
                       })}

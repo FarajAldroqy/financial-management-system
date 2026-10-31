@@ -12,9 +12,15 @@ import {
 import {
   Eye, Printer, Plus, CheckSquare, Filter,
   ChevronLeft, ChevronRight, Pin, Trash2, Archive, FileText, Edit3, Loader2, Download,
+  ChevronDown, ChevronUp, Receipt,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+} from '@/components/ui/dropdown-menu'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { formatCurrency, formatDate, filterTransactionsByDate, getLocalDeviceISOString } from '@/lib/utils'
+import { formatCurrency, formatDate, filterTransactionsByDate, getLocalDeviceISOString, getTransactionItems } from '@/lib/utils'
 import type { Transaction, TransactionCreate, DateFilter } from '@/types'
 import { TransactionModal } from './TransactionModal'
 import { EditTransactionModal } from './EditTransactionModal'
@@ -109,6 +115,18 @@ export function TransactionsTable({
   // Receipt viewing modal state
   const [selectedReceipt, setSelectedReceipt] = useState<Transaction | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
+
+  // Expandable invoice details state
+  const [expandedInvoiceIds, setExpandedInvoiceIds] = useState<Set<number>>(new Set())
+
+  const toggleExpandInvoice = (id: number) => {
+    setExpandedInvoiceIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const activeFilterCount = useMemo(() => {
     let count = 0
@@ -940,6 +958,8 @@ export function TransactionsTable({
                           const isDeleting = deletingId === tx.id
                           const isArchiving = archivingId === tx.id
                           const isNewlyCreated = newlyCreatedId === tx.id
+                          const invoiceItems = getTransactionItems(tx)
+                          const isDetailedWithdrawal = !isDeposit && (tx.subtype === 'PERSON' || invoiceItems.length > 0)
 
                           return (
                             <motion.tr
@@ -1066,13 +1086,84 @@ export function TransactionsTable({
                                       <span className={`text-xs truncate ${isNewlyCreated ? 'text-zinc-950 dark:text-white font-extrabold' : isPinned ? 'font-bold text-zinc-900 dark:text-white' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
                                         {tx.client_name}
                                       </span>
-                                      {tx.subtype === 'PERSON' && (
+                                      {isDeposit && tx.subtype === 'PERSON' && (
                                         <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium truncate">
-                                          {isDeposit
-                                            ? `بواسطة المودِع: ${tx.person_name || 'شخص'}`
-                                            : `فاتورة: ${tx.person_name || 'سحب تفصيلي'}${tx.items && tx.items.length > 0 ? ` (${tx.items.length} عناصر)` : ''}`
-                                          }
+                                          بواسطة المودِع: {tx.person_name || 'شخص'}
                                         </span>
+                                      )}
+                                      {isDetailedWithdrawal && (
+                                        <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                              <button
+                                                type="button"
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer shadow-2xs"
+                                                title="عرض عناصر وقيم الفاتورة"
+                                              >
+                                                <Receipt className="w-2.5 h-2.5" />
+                                                <span className="truncate max-w-[120px]">{tx.person_name || 'فاتورة تفصيلية'}</span>
+                                                <span className="px-1 py-0.2 bg-rose-200/70 dark:bg-rose-800/80 rounded-full text-[9px] font-mono">
+                                                  {invoiceItems.length}
+                                                </span>
+                                                <ChevronDown className="w-2.5 h-2.5 opacity-70" />
+                                              </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent
+                                              align="start"
+                                              sideOffset={4}
+                                              className="w-72 sm:w-80 p-0 font-arabic text-right shadow-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-xl overflow-hidden z-50"
+                                            >
+                                              <div className="p-2.5 bg-rose-50/80 dark:bg-rose-950/40 border-b border-rose-100 dark:border-rose-900/50 flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 font-bold text-xs text-rose-950 dark:text-rose-200">
+                                                  <Receipt className="w-3.5 h-3.5 text-rose-600" />
+                                                  <span>{tx.person_name || 'عناصر الفاتورة'}</span>
+                                                </div>
+                                                <span className="text-[10px] font-medium text-zinc-500">
+                                                  {invoiceItems.length} عناصر
+                                                </span>
+                                              </div>
+                                              <div className="max-h-60 overflow-y-auto p-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                {invoiceItems.length === 0 ? (
+                                                  <div className="p-3 text-center text-xs text-zinc-400">لا توجد عناصر مسجلة</div>
+                                                ) : (
+                                                  invoiceItems.map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-lg text-xs">
+                                                      <div className="flex items-center gap-2 min-w-0 pr-1">
+                                                        <span className="w-4 text-[10px] text-zinc-400 font-mono font-bold shrink-0">{idx + 1}</span>
+                                                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">{item.name}</span>
+                                                      </div>
+                                                      <span className="font-bold text-rose-600 dark:text-rose-400 font-sans ar-num shrink-0 mr-2">
+                                                        {formatCurrency(Math.round(item.amount * 100))}
+                                                      </span>
+                                                    </div>
+                                                  ))
+                                                )}
+                                              </div>
+                                              <div className="p-2 bg-zinc-50 dark:bg-zinc-800/80 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs font-bold">
+                                                <span className="text-zinc-600 dark:text-zinc-400">إجمالي الفاتورة:</span>
+                                                <span className="text-rose-600 dark:text-rose-400 font-sans ar-num">
+                                                  {formatCurrency(tx.amount_cents)}
+                                                </span>
+                                              </div>
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              toggleExpandInvoice(tx.id)
+                                            }}
+                                            className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 inline-flex items-center gap-0.5 p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                            title={expandedInvoiceIds.has(tx.id) ? 'طي الجدول الداخلي' : 'توسيع كجدول مدمج'}
+                                          >
+                                            {expandedInvoiceIds.has(tx.id) ? (
+                                              <ChevronUp className="w-3 h-3 text-rose-500" />
+                                            ) : (
+                                              <ChevronDown className="w-3 h-3" />
+                                            )}
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
@@ -1158,6 +1249,52 @@ export function TransactionsTable({
                                     )}
                                   </div>
                                 </motion.div>
+
+                                {/* Inline Expandable Invoice Items Breakdown */}
+                                {expandedInvoiceIds.has(tx.id) && invoiceItems.length > 0 && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="mx-4 mb-3 p-3 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 font-arabic text-xs"
+                                  >
+                                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-rose-200/70 dark:border-rose-900/50">
+                                      <div className="flex items-center gap-2">
+                                        <Receipt className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                                        <span className="font-extrabold text-rose-950 dark:text-rose-200">
+                                          عناصر الفاتورة: {tx.person_name || 'سحب تفصيلي'}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500 font-medium">({invoiceItems.length} عناصر)</span>
+                                      </div>
+                                      <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 font-sans ar-num">
+                                        إجمالي الفاتورة: {formatCurrency(tx.amount_cents)}
+                                      </span>
+                                    </div>
+                                    <div className="overflow-x-auto rounded-lg border border-rose-200/60 dark:border-rose-900/40 bg-white dark:bg-zinc-900">
+                                      <table className="w-full text-right border-collapse text-xs">
+                                        <thead>
+                                          <tr className="bg-rose-50/60 dark:bg-zinc-800 text-[11px] font-bold text-zinc-700 dark:text-zinc-300 border-b border-rose-100 dark:border-zinc-700">
+                                            <th className="p-2 w-8 text-center border-l border-rose-100 dark:border-zinc-700">#</th>
+                                            <th className="p-2 border-l border-rose-100 dark:border-zinc-700">اسم وبيان العنصر</th>
+                                            <th className="p-2 text-left w-36">القيمة المالية</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                          {invoiceItems.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                                              <td className="p-2 text-center text-zinc-400 font-mono font-bold border-l border-zinc-100 dark:border-zinc-800">{idx + 1}</td>
+                                              <td className="p-2 font-semibold text-zinc-800 dark:text-zinc-200 border-l border-zinc-100 dark:border-zinc-800">{item.name}</td>
+                                              <td className="p-2 text-left font-bold text-rose-600 dark:text-rose-400 font-sans ar-num">
+                                                {formatCurrency(Math.round(item.amount * 100))}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </motion.div>
+                                )}
                               </TableCell>
                             </motion.tr>
                           )

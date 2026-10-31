@@ -26,6 +26,26 @@ export function formatCurrency(cents: number, symbol?: string, _locale = 'ar-LY'
   return `${formatted} ${sym}`
 }
 
+/** Extract itemized list from transaction items or legacy person_names */
+export function getTransactionItems(tx: { items?: Array<{ name: string; amount: number }>; person_names?: string[] }): Array<{ name: string; amount: number }> {
+  if (Array.isArray(tx.items) && tx.items.length > 0) {
+    return tx.items
+  }
+  if (Array.isArray(tx.person_names) && tx.person_names.length > 0) {
+    const parsed = tx.person_names.map((pn) => {
+      const idx = pn.lastIndexOf(':')
+      if (idx !== -1) {
+        const name = pn.slice(0, idx).trim()
+        const amount = parseFloat(pn.slice(idx + 1).trim()) || 0
+        return { name, amount }
+      }
+      return { name: pn, amount: 0 }
+    }).filter((it) => it.name.trim() !== '')
+    if (parsed.length > 0) return parsed
+  }
+  return []
+}
+
 /** Convert Eastern Arabic (٠-٩) and Persian (۰-۹) numerals into standard Western (0-9) digits */
 export function normalizeArabicNumerals(input: string): string {
   const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']

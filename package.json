@@ -4,7 +4,7 @@
   "description": "منظومة إدارة مالية لإدارة السيولة والمعاملات والخزينة",
   "author": "منظومة إدارة مالية",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "start": "vite",
